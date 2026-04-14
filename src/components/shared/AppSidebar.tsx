@@ -44,7 +44,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   return (
     <aside
-      className="w-sidebar flex-shrink-0 flex flex-col bg-surface-dark border-r border-white/[0.05]"
+      className="w-sidebar flex-shrink-0 hidden lg:flex flex-col bg-surface-dark border-r border-white/[0.05]"
       aria-label="Main navigation"
     >
       {/* ── Logo ── */}
