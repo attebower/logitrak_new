@@ -90,6 +90,31 @@ Production deploys are triggered manually via Vercel after:
 - Scout (QA) has approved the PR
 - Manual review of pre-production checklist
 
+## E2E Tests
+
+E2E tests use [Playwright](https://playwright.dev/) and live in `./tests/`.
+
+### Install browsers (first time only)
+```bash
+npx playwright install chromium
+```
+
+### Run tests
+```bash
+# Run all E2E tests (starts dev server automatically)
+npx playwright test
+
+# Interactive UI mode
+npx playwright test --ui
+
+# View last HTML report
+npx playwright show-report
+```
+
+Tests auto-start the dev server on `localhost:3000`. If a dev server is already running, it will be reused.
+
+---
+
 ## Contributing
 
 1. Branch from `dev`
