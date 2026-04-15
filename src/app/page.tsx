@@ -489,7 +489,7 @@ export default function HomePage() {
             <h2 className="text-4xl font-extrabold tracking-[-0.03em] text-white sm:text-5xl">
               Everything your department needs.
             </h2>
-            <p className="mt-3 text-xl text-white/30">Nothing it doesn't.</p>
+            <p className="mt-3 text-xl text-white/30">Nothing it doesn&apos;t.</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
