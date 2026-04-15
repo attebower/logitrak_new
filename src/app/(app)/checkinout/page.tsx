@@ -22,6 +22,8 @@ import { LocationPicker } from "@/components/shared/LocationPicker";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
+import { ScanWarningList } from "@/components/shared/ScanWarningBanner";
+import type { ScanWarning } from "@/components/shared/ScanWarningBanner";
 import type { BatchItem, BatchItemStatus } from "@/components/shared/BatchListItem";
 import type { CheckMode } from "@/components/shared/ModeToggle";
 import type { LocationValue, StudioOption } from "@/components/shared/LocationPicker";
@@ -36,14 +38,6 @@ const POSITION_MAP = {
 } as const;
 
 type DBPositionType = typeof POSITION_MAP[keyof typeof POSITION_MAP];
-
-// ── Scan warning ──────────────────────────────────────────────────────────
-
-type ScanWarning = {
-  serial: string;
-  kind: "duplicate" | "damaged" | "wrong-state" | "unknown";
-  message: string;
-};
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -327,9 +321,7 @@ export default function CheckInOutPage() {
                       </div>
 
                       {/* Scan warnings */}
-                      {warnings.map((w) => (
-                        <ScanWarningBanner key={w.serial} warning={w} onDismiss={() => clearWarning(w.serial)} />
-                      ))}
+                      <ScanWarningList warnings={warnings} onDismiss={(serial) => clearWarning(serial)} />
 
                       {/* Force checkout toggle (manager+) */}
                       {isManager && (
@@ -476,9 +468,7 @@ export default function CheckInOutPage() {
                         )}
                       </div>
 
-                      {warnings.map((w) => (
-                        <ScanWarningBanner key={w.serial} warning={w} onDismiss={() => clearWarning(w.serial)} />
-                      ))}
+                      <ScanWarningList warnings={warnings} onDismiss={(serial) => clearWarning(serial)} />
 
                       <BatchList
                         items={inBatch}
@@ -583,18 +573,4 @@ function SuccessCard({ message }: { message: string }) {
   );
 }
 
-const warningStyles: Record<ScanWarning["kind"], string> = {
-  duplicate:     "bg-grey-light border-grey-mid text-grey",
-  damaged:       "bg-status-red-light border-status-red/20 text-status-red",
-  "wrong-state": "bg-status-amber-light border-status-amber/20 text-status-amber",
-  unknown:       "bg-grey-light border-grey-mid text-grey",
-};
 
-function ScanWarningBanner({ warning, onDismiss }: { warning: ScanWarning; onDismiss: () => void }) {
-  return (
-    <div className={`flex items-center gap-3 px-4 py-2.5 rounded-card border text-[12px] font-medium ${warningStyles[warning.kind]}`}>
-      <span className="flex-1">{warning.message}</span>
-      <button type="button" onClick={onDismiss} className="opacity-60 hover:opacity-100 text-base leading-none" aria-label="Dismiss">×</button>
-    </div>
-  );
-}

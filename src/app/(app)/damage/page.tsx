@@ -15,6 +15,7 @@ import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/shared/StatCard";
 import { DamageCardList } from "@/components/shared/DamageCard";
+import { FilterTabs } from "@/components/shared/FilterTabs";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { DamageReport } from "@/components/shared/DamageCard";
@@ -207,20 +208,15 @@ export default function DamagePage() {
         )}
 
         {/* Filter tabs */}
-        <div className="flex gap-1">
-          {(["active", "all", "resolved"] as FilterMode[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={[
-                "px-3 py-1.5 rounded-btn text-[11px] font-semibold transition-colors capitalize",
-                filter === f ? "bg-brand-blue text-white" : "bg-grey-light text-grey hover:bg-grey-mid",
-              ].join(" ")}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
-        </div>
+        <FilterTabs
+          options={[
+            { label: "Active",   value: "active"   },
+            { label: "All",      value: "all"      },
+            { label: "Resolved", value: "resolved" },
+          ]}
+          value={filter}
+          onChange={(v) => setFilter(v as FilterMode)}
+        />
 
         <DamageCardList
           reports={cards}
