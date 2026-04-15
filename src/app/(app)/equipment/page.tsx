@@ -10,6 +10,7 @@
  */
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { EquipmentListRow, EquipmentTableHead } from "@/components/shared/EquipmentListRow";
@@ -56,6 +57,7 @@ export default function EquipmentPage() {
   const [selectedIds,  setSelectedIds] = useState<Set<string>>(new Set());
   const [detailId,     setDetailId]    = useState<string | null>(null);
   const [showAddForm,  setShowAddForm] = useState(false);
+  const router = useRouter();
 
   // Add form state
   const [newSerial,   setNewSerial]   = useState("");
@@ -166,7 +168,17 @@ export default function EquipmentPage() {
         actions={
           <>
             <Button variant="secondary" size="sm">Import CSV</Button>
-            <Button variant="secondary" size="sm">QR Labels</Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={selectedIds.size === 0}
+              onClick={() => {
+                const ids = Array.from(selectedIds).join(",");
+                router.push(`/equipment/labels?ids=${ids}`);
+              }}
+            >
+              🖨 QR Labels{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+            </Button>
             <Button variant="primary" size="sm" onClick={() => setShowAddForm(true)}>
               + Add Equipment
             </Button>

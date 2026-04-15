@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { AppSidebar } from "@/components/shared/AppSidebar";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { WorkspaceProvider } from "@/lib/workspace-context";
+import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 import type { NavSection } from "@/components/shared/AppSidebar";
 
 const NAV_SECTIONS: NavSection[] = [
@@ -86,9 +87,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             user={displayUser}
             deptLabel={membership.workspace.name}
           />
-          <main className="flex-1 overflow-hidden flex flex-col bg-grey-light">
+          <main className="flex-1 overflow-hidden flex flex-col bg-grey-light pb-16 lg:pb-0">
             {children}
           </main>
+          <MobileBottomNav />
         </div>
       </WorkspaceProvider>
     </TRPCProvider>
