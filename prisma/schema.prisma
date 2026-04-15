@@ -54,9 +54,9 @@ enum CheckEventType {
 
 enum PositionType {
   on_set
-  rigged
-  in_props
-  in_dressing
+  rigged_to_outside_of_set
+  inside_prop_make
+  in_prop_dressing
 }
 
 model Workspace {
@@ -82,6 +82,8 @@ model Workspace {
   checkEvents         CheckEvent[]
   damageReports       DamageReport[]
   repairLogs          RepairLog[]
+  setSnapshots        SetSnapshot[]
+  activityEvents      ActivityEvent[]
 
   @@map("workspaces")
 }
@@ -99,6 +101,8 @@ model UserProfile {
   checkEvents          CheckEvent[]
   damageReports        DamageReport[]
   repairLogs           RepairLog[]
+  setSnapshots         SetSnapshot[]
+  activityEvents       ActivityEvent[]
 
   @@map("user_profiles")
 }
@@ -180,6 +184,7 @@ model Studio {
   id          String   @id @default(cuid())
   workspaceId String
   name        String
+  displayId   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -212,6 +217,7 @@ model Set {
   workspaceId String
   stageId     String
   name        String
+  description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -232,9 +238,10 @@ model CheckEvent {
   studioId            String?
   stageId             String?
   setId               String?
-  positionType        PositionType?
-  positionDescription String?
-  createdAt           DateTime       @default(now())
+  positionType             PositionType?
+  positionDescription      String?        // general free-text position
+  exactLocationDescription String?        // only for inside_prop_make / in_prop_dressing
+  createdAt                DateTime       @default(now())
 
   workspace Workspace   @relation(fields: [workspaceId], references: [id])
   equipment Equipment   @relation(fields: [equipmentId], references: [id])
@@ -244,6 +251,50 @@ model CheckEvent {
   set       Set?        @relation(fields: [setId], references: [id])
 
   @@map("check_events")
+}
+
+// ─── SetSnapshot (Sprint 2) ───────────────────────────────────────────────────
+// Point-in-time snapshot of all equipment on a named set.
+// equipmentList: JSON array of equipment records at time of creation.
+// summary: { totalItems, checkedOut, available, damaged }
+
+model SetSnapshot {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  name          String
+  studioId      String?
+  stageId       String?
+  setId         String?
+  createdById   String
+  equipmentList Json
+  summary       Json
+  createdAt     DateTime @default(now())
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy UserProfile @relation(fields: [createdById], references: [id])
+
+  @@map("set_snapshots")
+}
+
+// ─── ActivityEvent (all tiers) ────────────────────────────────────────────────
+// Basic activity feed — dashboard widget, last N events.
+// Separate from Enterprise audit log (tamper-proof, before/after state).
+// Written on: check-out, check-in, damage report, repair log, equipment changes.
+
+model ActivityEvent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  actorId     String
+  eventType   String   // e.g. "check_out", "check_in", "damage_reported", "repair_logged"
+  description String
+  entityType  String   // "equipment" | "check_event" | "damage_report" | "repair_log"
+  entityId    String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     UserProfile @relation(fields: [actorId], references: [id])
+
+  @@map("activity_events")
 }
 
 model DamageReport {

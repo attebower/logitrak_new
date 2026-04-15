@@ -2,13 +2,15 @@
  * LogiTrak AppSidebar Component
  * Pixel-match to LogiTrak_UI_Concepts.html — Screen 01 sidebar.
  *
- * Nova: wire `activeItem` to the current route using Next.js `usePathname()`.
- * Add real navigation items from the product spec (routes TBD by Atlas).
+ * Active route is derived internally via usePathname() — the layout does
+ * not need to pass activeHref. This keeps the layout a Server Component
+ * so it can perform server-side auth checks.
  */
 
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -25,7 +27,6 @@ export interface NavSection {
 
 export interface AppSidebarProps {
   sections: NavSection[];
-  activeHref: string;
   /** User display info */
   user: {
     initials: string;
@@ -38,10 +39,10 @@ export interface AppSidebarProps {
 
 export function AppSidebar({
   sections,
-  activeHref,
   user,
   deptLabel,
 }: AppSidebarProps) {
+  const pathname = usePathname();
   return (
     <aside
       className="w-sidebar flex-shrink-0 hidden lg:flex flex-col bg-surface-dark border-r border-white/[0.05]"
@@ -68,7 +69,7 @@ export function AppSidebar({
 
             {/* Items */}
             {section.items.map((item) => {
-              const isActive = activeHref === item.href;
+              const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
               return (
                 <Link
                   key={item.href}
