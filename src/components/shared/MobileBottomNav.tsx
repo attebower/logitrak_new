@@ -1,152 +1,220 @@
-"use client";
-
 /**
- * LogiTrak MobileBottomNav — Sprint 4
+ * LogiTrak MobileBottomNav Component
+ * Fixed bottom navigation for mobile — hidden on lg+ (sidebar takes over).
  *
- * Fixed bottom bar for mobile (hidden on lg+).
- * 5 items: Dashboard, Check In/Out, Equipment, Damage, More (→ slide-up sheet)
- * "More" sheet: Reports, Team, Settings.
+ * 5 tabs: Dashboard, Check In/Out, Equipment, Damage, More.
+ * "More" opens a slide-up sheet with secondary nav items.
+ * Safe-area padding for notched phones (env(safe-area-inset-bottom)).
  *
- * Active state: brand-blue icon + label; inactive: grey.
- * Shown only when `hidden lg:flex` on parent, or directly with `lg:hidden` on this component.
+ * Usage:
+ *   // In the app shell layout, below the main content:
+ *   <MobileBottomNav
+ *     activeHref={pathname}
+ *     damageCount={damageCount}
+ *   />
  */
 
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
-interface NavItem {
-  href:   string;
+// ── Nav definitions ───────────────────────────────────────────────────────
+
+interface PrimaryTab {
   label:  string;
+  href:   string;
   icon:   string;
+  badge?: number;
 }
 
-const MAIN_ITEMS: NavItem[] = [
-  { href: "/dashboard",  label: "Dashboard",   icon: "⊞" },
-  { href: "/checkinout", label: "Check In/Out", icon: "⇄" },
-  { href: "/equipment",  label: "Equipment",   icon: "≡" },
-  { href: "/damage",     label: "Damage",      icon: "⚠" },
+interface SheetItem {
+  label: string;
+  href:  string;
+  icon:  string;
+}
+
+const PRIMARY_TABS: PrimaryTab[] = [
+  { label: "Dashboard",    href: "/dashboard",  icon: "⊞" },
+  { label: "Check In/Out", href: "/checkinout", icon: "⇄" },
+  { label: "Equipment",    href: "/equipment",  icon: "≡" },
+  { label: "Damage",       href: "/damage",     icon: "⚠" },
 ];
 
-const MORE_ITEMS: NavItem[] = [
-  { href: "/reports",   label: "Reports",  icon: "📋" },
-  { href: "/team",      label: "Team",     icon: "👥" },
-  { href: "/locations", label: "Locations", icon: "🏢" },
-  { href: "/settings",  label: "Settings", icon: "⚙" },
+const SHEET_ITEMS: SheetItem[] = [
+  { label: "Reports",   href: "/reports",   icon: "📋" },
+  { label: "Team",      href: "/team",      icon: "👥" },
+  { label: "Locations", href: "/locations", icon: "🏢" },
+  { label: "Settings",  href: "/settings",  icon: "⚙" },
 ];
 
-export function MobileBottomNav() {
-  const pathname = usePathname();
+// ── Component ─────────────────────────────────────────────────────────────
+
+export interface MobileBottomNavProps {
+  /** Active href — pass usePathname() */
+  activeHref?:  string;
+  /** Damage count for badge — mirrors sidebar badge */
+  damageCount?: number;
+}
+
+export function MobileBottomNav({
+  activeHref,
+  damageCount,
+}: MobileBottomNavProps) {
+  const pathname   = usePathname();
+  const current    = activeHref ?? pathname;
   const [sheetOpen, setSheetOpen] = useState(false);
 
   // Close sheet on route change
   useEffect(() => { setSheetOpen(false); }, [pathname]);
 
-  // Close sheet on Escape
+  // Prevent body scroll when sheet is open
   useEffect(() => {
-    if (!sheetOpen) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setSheetOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.body.style.overflow = sheetOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
   }, [sheetOpen]);
 
-  const isMoreActive = MORE_ITEMS.some((i) =>
-    pathname === i.href || pathname.startsWith(i.href + "/")
-  );
+  const sheetActive = SHEET_ITEMS.some((i) => i.href === current);
 
   return (
     <>
-      {/* Bottom nav bar — only on mobile */}
+      {/* ── Bottom nav bar ── */}
       <nav
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-grey-mid flex items-stretch"
+        className={cn(
+          "lg:hidden fixed bottom-0 left-0 right-0 z-30",
+          "bg-white border-t border-grey-mid",
+          // Safe-area padding for notched phones
+          "pb-[env(safe-area-inset-bottom,0px)]"
+        )}
         aria-label="Mobile navigation"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {MAIN_ITEMS.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-center transition-colors",
-                isActive ? "text-brand-blue" : "text-grey hover:text-surface-dark"
-              )}
-              aria-current={isActive ? "page" : undefined}
-            >
-              <span className="text-[20px] leading-none">{item.icon}</span>
-              <span className="text-[10px] font-semibold">{item.label}</span>
-            </Link>
-          );
-        })}
+        <div className="flex">
+          {/* Primary tabs */}
+          {PRIMARY_TABS.map((tab) => {
+            const isActive = current === tab.href;
+            const count = tab.href === "/damage" ? damageCount : undefined;
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className="flex-1 flex flex-col items-center pt-2.5 pb-2"
+                aria-current={isActive ? "page" : undefined}
+              >
+                <div className="relative">
+                  <span
+                    className={cn(
+                      "text-[18px] leading-none",
+                      isActive ? "text-brand-blue" : "text-grey"
+                    )}
+                    aria-hidden
+                  >
+                    {tab.icon}
+                  </span>
+                  {count != null && count > 0 && (
+                    <span className="absolute -top-1 -right-1.5 bg-status-red text-white text-[9px] font-bold px-1 py-px rounded-full leading-none">
+                      {count > 99 ? "99+" : count}
+                    </span>
+                  )}
+                </div>
+                <span
+                  className={cn(
+                    "text-[9px] mt-1 font-medium tracking-tight",
+                    isActive ? "text-brand-blue" : "text-grey"
+                  )}
+                >
+                  {tab.label}
+                </span>
+              </Link>
+            );
+          })}
 
-        {/* More button */}
-        <button
-          type="button"
-          onClick={() => setSheetOpen((v) => !v)}
-          className={cn(
-            "flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors",
-            isMoreActive || sheetOpen ? "text-brand-blue" : "text-grey hover:text-surface-dark"
-          )}
-          aria-expanded={sheetOpen}
-          aria-haspopup="dialog"
-        >
-          <span className="text-[20px] leading-none">☰</span>
-          <span className="text-[10px] font-semibold">More</span>
-        </button>
+          {/* More tab */}
+          <button
+            className="flex-1 flex flex-col items-center pt-2.5 pb-2"
+            onClick={() => setSheetOpen((o) => !o)}
+            aria-expanded={sheetOpen}
+            aria-controls="more-sheet"
+            aria-label="More navigation options"
+          >
+            <span
+              className={cn(
+                "text-[18px] leading-none",
+                (sheetOpen || sheetActive) ? "text-brand-blue" : "text-grey"
+              )}
+              aria-hidden
+            >
+              ⋯
+            </span>
+            <span
+              className={cn(
+                "text-[9px] mt-1 font-medium tracking-tight",
+                (sheetOpen || sheetActive) ? "text-brand-blue" : "text-grey"
+              )}
+            >
+              More
+            </span>
+          </button>
+        </div>
       </nav>
 
-      {/* Slide-up sheet overlay */}
+      {/* ── More sheet ── */}
+      {/* Backdrop */}
       {sheetOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="lg:hidden fixed inset-0 z-50 bg-black/30"
-            onClick={() => setSheetOpen(false)}
-            aria-hidden
-          />
-
-          {/* Sheet */}
-          <div
-            className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-panel border-t border-grey-mid"
-            role="dialog"
-            aria-label="More navigation"
-            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-          >
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-10 h-1 bg-grey-mid rounded-full" />
-            </div>
-
-            <div className="px-4 pb-4">
-              <p className="text-[10px] font-bold text-grey uppercase tracking-widest mb-3 px-1">More</p>
-              <div className="grid grid-cols-2 gap-2">
-                {MORE_ITEMS.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 px-4 py-3 rounded-card border transition-colors",
-                        isActive
-                          ? "bg-brand-blue-light border-brand-blue/20 text-brand-blue"
-                          : "bg-grey-light border-grey-mid text-surface-dark hover:bg-white"
-                      )}
-                    >
-                      <span className="text-[18px]">{item.icon}</span>
-                      <span className="text-[13px] font-medium">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </>
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/30"
+          onClick={() => setSheetOpen(false)}
+          aria-hidden
+        />
       )}
+
+      {/* Sheet */}
+      <div
+        id="more-sheet"
+        role="dialog"
+        aria-label="More navigation"
+        aria-modal="true"
+        className={cn(
+          "lg:hidden fixed bottom-0 left-0 right-0 z-50",
+          "bg-white rounded-t-[20px] shadow-device",
+          "transition-transform duration-300",
+          // Slide up/down
+          sheetOpen ? "translate-y-0" : "translate-y-full",
+          // Safe-area bottom padding
+          "pb-[env(safe-area-inset-bottom,16px)]"
+        )}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-2">
+          <div className="w-9 h-1 bg-grey-mid rounded-full" aria-hidden />
+        </div>
+
+        {/* Sheet items */}
+        <div className="px-4 pb-4">
+          {SHEET_ITEMS.map((item) => {
+            const isActive = current === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-4 px-4 py-3.5 rounded-[10px] transition-colors",
+                  isActive
+                    ? "bg-brand-blue/8 text-brand-blue"
+                    : "text-surface-dark hover:bg-grey-light"
+                )}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <span className="text-[20px] leading-none w-7 text-center" aria-hidden>
+                  {item.icon}
+                </span>
+                <span className="text-[15px] font-medium">{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
     </>
   );
 }

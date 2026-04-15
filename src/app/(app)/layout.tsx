@@ -87,7 +87,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             user={displayUser}
             deptLabel={membership.workspace.name}
           />
-          <main className="flex-1 overflow-hidden flex flex-col bg-grey-light pb-16 lg:pb-0">
+          <main className="flex-1 overflow-hidden flex flex-col bg-grey-light pb-20 lg:pb-0">
             {children}
           </main>
           <MobileBottomNav />
