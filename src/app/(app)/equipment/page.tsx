@@ -19,6 +19,8 @@ import { FilterTabs } from "@/components/shared/FilterTabs";
 import { FormInput, FormSelect } from "@/components/shared/FormField";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
+import { CsvImportModal } from "@/components/shared/CsvImportModal";
+import type { ImportResult } from "@/components/shared/CsvImportModal";
 import type { EquipmentItem } from "@/components/shared/EquipmentListRow";
 import type { EquipmentDetail } from "@/components/shared/EquipmentDetailPanel";
 
@@ -57,6 +59,7 @@ export default function EquipmentPage() {
   const [selectedIds,  setSelectedIds] = useState<Set<string>>(new Set());
   const [detailId,     setDetailId]    = useState<string | null>(null);
   const [showAddForm,  setShowAddForm] = useState(false);
+  const [showCsvModal, setShowCsvModal] = useState(false);
   const router = useRouter();
 
   // Add form state
@@ -82,6 +85,8 @@ export default function EquipmentPage() {
   const { data: categories } = trpc.category.list.useQuery({ workspaceId });
 
   // ── Mutations ────────────────────────────────────────────────────────────
+
+  const importCsv = trpc.equipment.importCsv.useMutation();
 
   const createEquipment = trpc.equipment.create.useMutation({
     onSuccess: () => {
@@ -167,7 +172,7 @@ export default function EquipmentPage() {
         title="Equipment Registry"
         actions={
           <>
-            <Button variant="secondary" size="sm">Import CSV</Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowCsvModal(true)}>Import CSV</Button>
             <Button
               variant="secondary"
               size="sm"
@@ -298,6 +303,26 @@ export default function EquipmentPage() {
           )}
         </div>
       </div>
+
+      {/* CSV import modal */}
+      <CsvImportModal
+        isOpen={showCsvModal}
+        onClose={() => setShowCsvModal(false)}
+        templateUrl="/equipment-import-template.csv"
+        onImport={async (file): Promise<ImportResult> => {
+          const csv = await file.text();
+          const result = await importCsv.mutateAsync({ workspaceId, csv });
+          void refetch();
+          return {
+            imported: result.imported,
+            errors: result.errors.map((e) => ({
+              row:     e.row,
+              field:   e.serial ? "serial" : undefined,
+              message: e.error,
+            })),
+          };
+        }}
+      />
 
       {/* Detail drawer */}
       <EquipmentDetailPanel

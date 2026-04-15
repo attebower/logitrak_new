@@ -10,6 +10,7 @@ import { damageRouter } from "./damage";
 import { reportsRouter } from "./reports";
 import { teamRouter } from "./team";
 import { adminRouter } from "./admin";
+import { billingRouter } from "./billing";
 
 export const appRouter = router({
   workspace: workspaceRouter,
@@ -23,6 +24,7 @@ export const appRouter = router({
   reports: reportsRouter,
   team: teamRouter,
   admin: adminRouter,
+  billing: billingRouter,
 });
 
 export type AppRouter = typeof appRouter;

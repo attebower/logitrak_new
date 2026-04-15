@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { SettingsSection, SettingsPage, SettingsField } from "@/components/shared/SettingsSection";
@@ -141,10 +142,15 @@ export default function SettingsPageComponent() {
             </form>
           </SettingsSection>
 
-          {/* Plan info */}
+          {/* Billing */}
           <SettingsSection
-            title="Subscription"
-            description="Your current plan and usage."
+            title="Billing"
+            description="Your current plan, usage, and payment details."
+            action={
+              <Link href="/settings/billing">
+                <span className="text-[12px] text-brand-blue hover:underline font-semibold">Manage billing →</span>
+              </Link>
+            }
           >
             <div className="space-y-3">
               <div className="flex items-center justify-between py-2 border-b border-grey-mid">
@@ -165,9 +171,11 @@ export default function SettingsPageComponent() {
                   {workspace?.equipmentCount ?? "—"} / {workspace?.maxAssets ?? "—"}
                 </span>
               </div>
-              <Button variant="secondary" size="sm" className="mt-2">
-                Manage Subscription
-              </Button>
+              <Link href="/settings/billing">
+                <Button variant="secondary" size="sm" className="mt-2">
+                  View Billing →
+                </Button>
+              </Link>
             </div>
           </SettingsSection>
 
