@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { StatCard, StatGrid } from "@/components/shared/StatCard";
 import { Badge } from "@/components/ui/badge";
 
+// TODO: wire to trpc.dashboard.stats.useQuery({ workspaceId }) once workspace context is available
 const MOCK_STATS = [
   { color: "blue"  as const, icon: "⊞", label: "Total Assets",  value: 847, change: "↑ 12 this week",    changeColor: "green" as const },
   { color: "green" as const, icon: "✓", label: "Available",     value: 412, change: "48.6% of total",     changeColor: "grey"  as const },

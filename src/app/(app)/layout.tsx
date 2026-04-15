@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/shared/AppSidebar";
 import type { NavSection } from "@/components/shared/AppSidebar";
+import { TRPCProvider } from "@/lib/trpc/provider";
 
 const NAV_SECTIONS: NavSection[] = [
   {
@@ -74,15 +75,17 @@ export default async function AppLayout({
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <AppSidebar
-        sections={NAV_SECTIONS}
-        user={displayUser}
-        deptLabel="🎬 Lighting Dept"
-      />
-      <main className="flex-1 overflow-hidden flex flex-col bg-grey-light">
-        {children}
-      </main>
-    </div>
+    <TRPCProvider>
+      <div className="flex h-screen overflow-hidden">
+        <AppSidebar
+          sections={NAV_SECTIONS}
+          user={displayUser}
+          deptLabel="🎬 Lighting Dept"
+        />
+        <main className="flex-1 overflow-hidden flex flex-col bg-grey-light">
+          {children}
+        </main>
+      </div>
+    </TRPCProvider>
   );
 }
