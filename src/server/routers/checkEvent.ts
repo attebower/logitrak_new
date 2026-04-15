@@ -32,10 +32,13 @@ export const checkEventRouter = router({
           .optional(),
         positionDescription: z.string().optional(),
         exactLocationDescription: z.string().optional(),
+        forceCheckOut: z.boolean().optional(), // BUG-009: manager+ override for already-checked-out items
       })
     )
     .mutation(async ({ ctx, input }) => {
       requireRole(ctx.userRole, OPERATOR_ROLES);
+
+      const isManager = MANAGER_ROLES.includes(ctx.userRole!);
 
       // Check for duplicate ids in batch
       const unique = new Set(input.equipmentIds);
@@ -69,10 +72,13 @@ export const checkEventRouter = router({
           });
         }
         if (item.status === "checked_out") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Equipment ${item.serial} is already checked out`,
-          });
+          // BUG-009: manager+ can force check-out; operators cannot
+          if (!isManager || !input.forceCheckOut) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Equipment ${item.serial} is already checked out — managers can use forceCheckOut to override`,
+            });
+          }
         }
         if (item.damageStatus === "damaged" || item.damageStatus === "under_repair") {
           throw new TRPCError({
@@ -107,17 +113,21 @@ export const checkEventRouter = router({
           });
           createdEvents.push(event);
 
-          await tx.equipment.update({
-            where: { id: item.id },
+          // BUG-010: include workspaceId in update where clause (atomic ownership check)
+          await tx.equipment.updateMany({
+            where: { id: item.id, workspaceId: ctx.workspaceId! },
             data: { status: "checked_out" },
           });
 
+          const isForced = input.forceCheckOut && item.status === "checked_out";
           await tx.activityEvent.create({
             data: {
               workspaceId: ctx.workspaceId!,
               actorId: userId,
-              eventType: "check_out",
-              description: `Checked out to ${locationLabel}`,
+              eventType: isForced ? "force_check_out" : "check_out",
+              description: isForced
+                ? `Force checked out to ${locationLabel} (was already checked out)`
+                : `Checked out to ${locationLabel}`,
               entityType: "equipment",
               entityId: item.id,
             },
@@ -190,8 +200,9 @@ export const checkEventRouter = router({
             },
           });
 
-          await tx.equipment.update({
-            where: { id: item.id },
+          // BUG-010: include workspaceId in update where clause (atomic ownership check)
+          await tx.equipment.updateMany({
+            where: { id: item.id, workspaceId: ctx.workspaceId! },
             data: { status: "available" },
           });
 

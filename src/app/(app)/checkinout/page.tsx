@@ -1,21 +1,16 @@
 "use client";
 
 /**
- * Check In / Out page — Sprint 2
+ * Check In / Out — wired to live tRPC data.
  *
- * QR scanning: react-qr-barcode-scanner via ScanArea.onScan
- * Audio: Web Audio beep (in ScanArea on successful scan)
- * Batch: add/remove/clear items
- * Validation: damaged → reject, duplicate → warn, wrong-state → amber warning
- * Location: LocationPicker (cascading dropdowns, exactLocationDescription conditional)
+ * Check-Out: trpc.checkEvent.checkOut (with forceCheckOut for Manager+)
+ * Check-In:  trpc.checkEvent.checkIn
+ * Location:  trpc.location.studio.list → stage.list → set.list (cascading)
+ * Equipment search: trpc.equipment.list (serial/name search)
  *
- * tRPC stubs — wire when Sage's routers land:
- *   - trpc.location.studio.list
- *   - trpc.location.stage.list
- *   - trpc.location.set.list
- *   - trpc.checkEvent.checkOut (batch)
- *   - trpc.checkEvent.checkIn
- *   - trpc.equipment.getBySerial
+ * Audio: Web Audio API beep fires in ScanArea on scan.
+ * Validation: damaged → red reject, duplicate → grey, already-out → amber
+ *             (server also validates; client-side is UX-only pre-flight).
  */
 
 import { useState, useCallback } from "react";
@@ -25,66 +20,24 @@ import { BatchList } from "@/components/shared/BatchListItem";
 import { ModeToggle } from "@/components/shared/ModeToggle";
 import { LocationPicker } from "@/components/shared/LocationPicker";
 import { Button } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc/client";
+import { useWorkspace } from "@/lib/workspace-context";
 import type { BatchItem, BatchItemStatus } from "@/components/shared/BatchListItem";
 import type { CheckMode } from "@/components/shared/ModeToggle";
 import type { LocationValue, StudioOption } from "@/components/shared/LocationPicker";
 
-// ── Mock equipment store — replace with trpc.equipment.getBySerial ─────────
+// ── Prisma positionType enum → LocationPicker PositionType ────────────────
 
-type EquipmentRecord = {
-  serial: string;
-  type: string;
-  status: "available" | "checked-out" | "damaged" | "repaired" | "under-repair";
-};
+const POSITION_MAP = {
+  "Inside Prop Make":        "inside_prop_make",
+  "In Prop Dressing":        "in_prop_dressing",
+  "On Set":                  "on_set",
+  "Rigged to Outside of Set": "rigged_to_outside_of_set",
+} as const;
 
-const MOCK_EQUIPMENT: Record<string, EquipmentRecord> = {
-  "SP-001": { serial: "SP-001", type: "Arri SkyPanel S60-C",  status: "available" },
-  "SP-002": { serial: "SP-002", type: "Arri SkyPanel S60-C",  status: "checked-out" },
-  "SP-003": { serial: "SP-003", type: "Arri SkyPanel S30",    status: "under-repair" },
-  "AT-001": { serial: "AT-001", type: "Astera Titan Tube",    status: "available" },
-  "AT-002": { serial: "AT-002", type: "Astera Titan Tube",    status: "damaged" },
-  "CV-001": { serial: "CV-001", type: "Creamsource Vortex8",  status: "checked-out" },
-  "DD-001": { serial: "DD-001", type: "Dedolight DLH4",       status: "available" },
-  "KF-001": { serial: "KF-001", type: "Kinoflo Freestyle 21", status: "available" },
-  "LA-001": { serial: "LA-001", type: "Litepanels Astra 6X",  status: "available" },
-};
+type DBPositionType = typeof POSITION_MAP[keyof typeof POSITION_MAP];
 
-// ── Mock location data — replace with trpc.location.studio.list ───────────
-
-const MOCK_STUDIOS: StudioOption[] = [
-  {
-    id: "1",
-    name: "Pinewood — Stage 7",
-    stages: [
-      {
-        id: "1-1",
-        name: "Stage 7A",
-        sets: [
-          { id: "1-1-1", name: "Throne Room" },
-          { id: "1-1-2", name: "Corridor B" },
-        ],
-      },
-      {
-        id: "1-2",
-        name: "Stage 7B",
-        sets: [{ id: "1-2-1", name: "Exterior — Market" }],
-      },
-    ],
-  },
-  {
-    id: "2",
-    name: "Shepperton — Stage 3",
-    stages: [
-      {
-        id: "2-1",
-        name: "Stage 3 Main",
-        sets: [{ id: "2-1-1", name: "Castle Hall" }],
-      },
-    ],
-  },
-];
-
-// ── Scan validation ────────────────────────────────────────────────────────
+// ── Scan warning ──────────────────────────────────────────────────────────
 
 type ScanWarning = {
   serial: string;
@@ -92,155 +45,204 @@ type ScanWarning = {
   message: string;
 };
 
-function validateScan(
-  serial: string,
-  mode: CheckMode,
-  batch: BatchItem[]
-): { ok: boolean; warning?: ScanWarning; item?: EquipmentRecord } {
-  // Duplicate in batch
-  if (batch.find((i) => i.serial === serial)) {
-    return {
-      ok: false,
-      warning: { serial, kind: "duplicate", message: `${serial} is already in the batch.` },
-    };
-  }
-
-  const equipment = MOCK_EQUIPMENT[serial]; // TODO: trpc.equipment.getBySerial
-
-  // Unknown serial
-  if (!equipment) {
-    return {
-      ok: false,
-      warning: { serial, kind: "unknown", message: `Serial ${serial} not found in this workspace.` },
-    };
-  }
-
-  // Damaged — always reject
-  if (equipment.status === "damaged" || equipment.status === "under-repair") {
-    return {
-      ok: false,
-      warning: {
-        serial,
-        kind: "damaged",
-        message: `${serial} is ${equipment.status.replace("-", " ")} — cannot be checked out or in.`,
-      },
-    };
-  }
-
-  // Mode-specific state checks
-  if (mode === "out" && equipment.status !== "available") {
-    return {
-      ok: false,
-      warning: {
-        serial,
-        kind: "wrong-state",
-        message: `${serial} is already checked out.`,
-      },
-    };
-  }
-
-  if (mode === "in" && equipment.status !== "checked-out") {
-    return {
-      ok: false,
-      warning: {
-        serial,
-        kind: "wrong-state",
-        message: `${serial} is not currently checked out.`,
-      },
-    };
-  }
-
-  return { ok: true, item: equipment };
-}
-
 // ── Types ─────────────────────────────────────────────────────────────────
 
 type CheckOutStep = "scan" | "location" | "confirm";
 type CheckInStep  = "scan" | "condition" | "confirm";
 type ConditionChoice = "good" | "needs-attention" | "damaged";
 
-interface BatchItemWithCondition extends BatchItem {
+interface BatchEntry extends BatchItem {
+  equipmentId: string;
+}
+interface BatchEntryWithCondition extends BatchEntry {
   condition?: ConditionChoice;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function CheckInOutPage() {
-  const [mode, setMode] = useState<CheckMode>("out");
+  const { workspaceId, userRole } = useWorkspace();
+  const isManager = ["owner", "admin", "manager"].includes(userRole);
+
+  const [mode,       setMode]       = useState<CheckMode>("out");
 
   // Check-out state
-  const [outStep,      setOutStep]      = useState<CheckOutStep>("scan");
-  const [outBatch,     setOutBatch]     = useState<BatchItem[]>([]);
-  const [outLocation,  setOutLocation]  = useState<LocationValue>({});
-  const [outSuccess,   setOutSuccess]   = useState(false);
+  const [outStep,     setOutStep]     = useState<CheckOutStep>("scan");
+  const [outBatch,    setOutBatch]    = useState<BatchEntry[]>([]);
+  const [outLocation, setOutLocation] = useState<LocationValue>({});
+  const [forceOut,    setForceOut]    = useState(false);
+  const [outError,    setOutError]    = useState<string | null>(null);
 
   // Check-in state
-  const [inStep,    setInStep]    = useState<CheckInStep>("scan");
-  const [inBatch,   setInBatch]   = useState<BatchItemWithCondition[]>([]);
-  const [inSuccess, setInSuccess] = useState(false);
+  const [inStep,  setInStep]  = useState<CheckInStep>("scan");
+  const [inBatch, setInBatch] = useState<BatchEntryWithCondition[]>([]);
+  const [inError, setInError] = useState<string | null>(null);
 
-  // Scan warnings (shown below ScanArea)
-  const [warnings, setWarnings] = useState<ScanWarning[]>([]);
+  // Scan state
+  const [warnings,    setWarnings]    = useState<ScanWarning[]>([]);
+  const [scanSearch,  setScanSearch]  = useState("");
 
-  // ── Scan handler ───────────────────────────────────────────────────────
+  // ── Live data ─────────────────────────────────────────────────────────
+
+  // Studios for LocationPicker (load once)
+  const { data: studios } = trpc.location.studio.list.useQuery({ workspaceId });
+
+  // Stages loaded when studio selected
+  const { data: stagesData } = trpc.location.stage.list.useQuery(
+    { workspaceId, studioId: outLocation.studioId! },
+    { enabled: !!outLocation.studioId }
+  );
+
+  // Sets loaded when stage selected
+  const { data: setsData } = trpc.location.set.list.useQuery(
+    { workspaceId, stageId: outLocation.stageId! },
+    { enabled: !!outLocation.stageId }
+  );
+
+  // Equipment search for batch building
+  const { data: searchResults } = trpc.equipment.list.useQuery(
+    { workspaceId, search: scanSearch, limit: 10 },
+    { enabled: scanSearch.length >= 2 }
+  );
+
+  // ── Build StudioOption tree for LocationPicker ─────────────────────────
+
+  const studioOptions: StudioOption[] = (studios ?? []).map((s) => ({
+    id:     s.id,
+    name:   s.name,
+    stages: (stagesData && outLocation.studioId === s.id ? stagesData : []).map((st) => ({
+      id:   st.id,
+      name: st.name,
+      sets: (setsData && outLocation.stageId === st.id ? setsData : []).map((set) => ({
+        id:   set.id,
+        name: set.name,
+      })),
+    })),
+  }));
+
+  // ── Mutations ─────────────────────────────────────────────────────────
+
+  const checkOut = trpc.checkEvent.checkOut.useMutation({
+    onSuccess: () => {
+      setOutBatch([]);
+      setOutLocation({});
+      setOutStep("scan");
+      setOutError(null);
+      setForceOut(false);
+    },
+    onError: (err) => setOutError(err.message),
+  });
+
+  const checkIn = trpc.checkEvent.checkIn.useMutation({
+    onSuccess: () => {
+      setInBatch([]);
+      setInStep("scan");
+      setInError(null);
+    },
+    onError: (err) => setInError(err.message),
+  });
+
+  // ── Scan handler ──────────────────────────────────────────────────────
 
   const handleScan = useCallback((serial: string) => {
     const currentBatch = mode === "out" ? outBatch : inBatch;
-    const { ok, warning, item } = validateScan(serial, mode, currentBatch);
 
-    if (!ok && warning) {
-      setWarnings((prev) => {
-        // Replace any existing warning for this serial
-        const filtered = prev.filter((w) => w.serial !== serial);
-        return [warning, ...filtered].slice(0, 3); // max 3 warnings visible
+    // Client-side duplicate check
+    if (currentBatch.find((i) => i.serial === serial)) {
+      addWarning({ serial, kind: "duplicate", message: `${serial} is already in the batch.` });
+      return;
+    }
+
+    // Look up in search results or trigger a search
+    const match = searchResults?.items.find(
+      (i) => i.serial.toUpperCase() === serial.toUpperCase()
+    );
+
+    if (!match) {
+      // Try setting the search to trigger a query
+      setScanSearch(serial);
+      addWarning({ serial, kind: "unknown", message: `${serial} not found — searching…` });
+      return;
+    }
+
+    // Client-side damage pre-flight
+    if (match.damageStatus === "damaged" || match.damageStatus === "under_repair") {
+      addWarning({
+        serial,
+        kind: "damaged",
+        message: `${serial} is ${match.damageStatus.replace("_", " ")} and cannot be checked ${mode === "out" ? "out" : "in"}.`,
       });
       return;
     }
 
-    if (!item) return;
+    // Mode-specific state warning
+    if (mode === "out" && match.status === "checked_out" && !forceOut) {
+      addWarning({
+        serial,
+        kind: "wrong-state",
+        message: isManager
+          ? `${serial} is already checked out. Enable force check-out to override.`
+          : `${serial} is already checked out.`,
+      });
+      return;
+    }
+    if (mode === "in" && match.status !== "checked_out") {
+      addWarning({
+        serial,
+        kind: "wrong-state",
+        message: `${serial} is not currently checked out.`,
+      });
+      return;
+    }
 
-    // Clear any warning for this serial on success
-    setWarnings((prev) => prev.filter((w) => w.serial !== serial));
+    clearWarning(serial);
 
-    const batchItem: BatchItem = {
-      serial: item.serial,
-      type: item.type,
-      status: "ok" as BatchItemStatus,
+    const entry: BatchEntry = {
+      serial:      match.serial,
+      type:        match.name,
+      status:      "ok" as BatchItemStatus,
+      equipmentId: match.id,
     };
 
-    if (mode === "out") {
-      setOutBatch((b) => [...b, batchItem]);
-    } else {
-      setInBatch((b) => [...b, batchItem]);
-    }
-  }, [mode, outBatch, inBatch]);
+    if (mode === "out") setOutBatch((b) => [...b, entry]);
+    else                setInBatch((b) => [...b, entry]);
+  }, [mode, outBatch, inBatch, searchResults, forceOut, isManager]);
 
-  // ── Check-out confirm ──────────────────────────────────────────────────
-
-  function handleOutConfirm() {
-    // TODO Sprint 2: trpc.checkEvent.checkOut.mutate({ items: outBatch, location: outLocation })
-    setOutSuccess(true);
-    setTimeout(() => {
-      setOutBatch([]);
-      setOutLocation({});
-      setOutStep("scan");
-      setOutSuccess(false);
-      setWarnings([]);
-    }, 2500);
+  function addWarning(w: ScanWarning) {
+    setWarnings((prev) => [w, ...prev.filter((x) => x.serial !== w.serial)].slice(0, 3));
+  }
+  function clearWarning(serial: string) {
+    setWarnings((prev) => prev.filter((x) => x.serial !== serial));
   }
 
-  // ── Check-in confirm ───────────────────────────────────────────────────
+  // ── Confirm check-out ──────────────────────────────────────────────────
+
+  function handleOutConfirm() {
+    const positionType = outLocation.positionType
+      ? (POSITION_MAP[outLocation.positionType] as DBPositionType)
+      : undefined;
+
+    checkOut.mutate({
+      workspaceId,
+      equipmentIds:             outBatch.map((i) => i.equipmentId),
+      studioId:                 outLocation.studioId,
+      stageId:                  outLocation.stageId,
+      setId:                    outLocation.setId,
+      positionType,
+      exactLocationDescription: outLocation.exactLocationDescription,
+      forceCheckOut:            forceOut ? true : undefined,
+    });
+  }
+
+  // ── Confirm check-in ───────────────────────────────────────────────────
 
   function handleInConfirm() {
-    // TODO Sprint 2: trpc.checkEvent.checkIn.mutate({ items: inBatch })
-    // TODO Sprint 2: auto-create damage report for items with condition="damaged"
-    setInSuccess(true);
-    setTimeout(() => {
-      setInBatch([]);
-      setInStep("scan");
-      setInSuccess(false);
-      setWarnings([]);
-    }, 2500);
+    checkIn.mutate({
+      workspaceId,
+      equipmentIds: inBatch.map((i) => i.equipmentId),
+    });
+    // TODO: items with condition="damaged" should auto-create damage reports
+    // Wire once trpc.damage.report.create is ready in the check-in flow
   }
 
   // ── Location validation ────────────────────────────────────────────────
@@ -254,14 +256,13 @@ export default function CheckInOutPage() {
       ? true
       : !!outLocation.exactLocationDescription?.trim());
 
-  // ── Helpers ────────────────────────────────────────────────────────────
+  // ── Studio/stage name helpers ──────────────────────────────────────────
 
   function studioName(id?: string) {
-    return MOCK_STUDIOS.find((s) => s.id === id)?.name ?? "";
+    return studios?.find((s) => s.id === id)?.name ?? "";
   }
-  function stageName(studioId?: string, stageId?: string) {
-    return MOCK_STUDIOS.find((s) => s.id === studioId)
-      ?.stages.find((st) => st.id === stageId)?.name ?? "";
+  function stageName(id?: string) {
+    return stagesData?.find((s) => s.id === id)?.name ?? "";
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -273,7 +274,6 @@ export default function CheckInOutPage() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-5">
 
-          {/* Mode toggle (disabled mid-flow) */}
           <ModeToggle
             mode={mode}
             onChange={(m) => {
@@ -288,10 +288,8 @@ export default function CheckInOutPage() {
           {/* ── CHECK OUT ── */}
           {mode === "out" && (
             <>
-              {outSuccess ? (
-                <SuccessCard
-                  message={`${outBatch.length} item${outBatch.length !== 1 ? "s" : ""} checked out successfully.`}
-                />
+              {checkOut.isSuccess ? (
+                <SuccessCard message={`${outBatch.length} item${outBatch.length !== 1 ? "s" : ""} checked out successfully.`} />
               ) : (
                 <>
                   {/* Step 1: Scan */}
@@ -299,15 +297,51 @@ export default function CheckInOutPage() {
                     <div className="space-y-4">
                       <ScanArea onScan={handleScan} onManualEntry={handleScan} />
 
+                      {/* Manual search */}
+                      <div className="relative">
+                        <input
+                          type="search"
+                          placeholder="Or search by name / serial…"
+                          value={scanSearch}
+                          onChange={(e) => setScanSearch(e.target.value)}
+                          className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+                        />
+                        {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
+                          <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-grey-mid rounded-card shadow-card overflow-hidden">
+                            {searchResults.items.slice(0, 6).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  handleScan(item.serial);
+                                  setScanSearch("");
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-grey-light border-b border-grey-mid last:border-b-0"
+                              >
+                                <span className="text-serial text-surface-dark">{item.serial}</span>
+                                <span className="text-[12px] text-grey flex-1">{item.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       {/* Scan warnings */}
-                      {warnings.length > 0 && (
-                        <div className="space-y-2">
-                          {warnings.map((w) => (
-                            <ScanWarningBanner key={w.serial} warning={w} onDismiss={() =>
-                              setWarnings((p) => p.filter((x) => x.serial !== w.serial))
-                            } />
-                          ))}
-                        </div>
+                      {warnings.map((w) => (
+                        <ScanWarningBanner key={w.serial} warning={w} onDismiss={() => clearWarning(w.serial)} />
+                      ))}
+
+                      {/* Force checkout toggle (manager+) */}
+                      {isManager && (
+                        <label className="flex items-center gap-2.5 text-[12px] text-grey cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={forceOut}
+                            onChange={(e) => setForceOut(e.target.checked)}
+                            className="w-3.5 h-3.5"
+                          />
+                          Force check-out (override already-checked-out items)
+                        </label>
                       )}
 
                       <BatchList
@@ -316,9 +350,7 @@ export default function CheckInOutPage() {
                         onClear={() => setOutBatch([])}
                       />
                       <Button
-                        variant="primary"
-                        size="lg"
-                        className="w-full"
+                        variant="primary" size="lg" className="w-full"
                         disabled={outBatch.length === 0}
                         onClick={() => setOutStep("location")}
                       >
@@ -336,21 +368,14 @@ export default function CheckInOutPage() {
                         </h2>
                         <LocationPicker
                           production="Series 4 — Episode 7"
-                          studios={MOCK_STUDIOS}
+                          studios={studioOptions}
                           value={outLocation}
                           onChange={setOutLocation}
                         />
                       </div>
                       <div className="flex gap-3">
-                        <Button variant="secondary" onClick={() => setOutStep("scan")} className="flex-1">
-                          ← Back
-                        </Button>
-                        <Button
-                          variant="primary"
-                          disabled={!locationComplete}
-                          onClick={() => setOutStep("confirm")}
-                          className="flex-1"
-                        >
+                        <Button variant="secondary" onClick={() => setOutStep("scan")} className="flex-1">← Back</Button>
+                        <Button variant="primary" disabled={!locationComplete} onClick={() => setOutStep("confirm")} className="flex-1">
                           Continue → Confirm
                         </Button>
                       </div>
@@ -362,11 +387,8 @@ export default function CheckInOutPage() {
                     <div className="space-y-4">
                       <div className="bg-white rounded-card border border-grey-mid p-5 space-y-4">
                         <h2 className="text-[14px] font-semibold text-surface-dark">Confirm Check Out</h2>
-
                         <div>
-                          <p className="text-caption text-grey uppercase mb-2">
-                            Items ({outBatch.length})
-                          </p>
+                          <p className="text-caption text-grey uppercase mb-2">Items ({outBatch.length})</p>
                           <div className="space-y-1">
                             {outBatch.map((item) => (
                               <div key={item.serial} className="flex items-center gap-2 text-[13px]">
@@ -376,28 +398,38 @@ export default function CheckInOutPage() {
                             ))}
                           </div>
                         </div>
-
                         <div>
                           <p className="text-caption text-grey uppercase mb-1">Destination</p>
                           <p className="text-[13px] text-surface-dark">
                             {[
                               studioName(outLocation.studioId),
-                              stageName(outLocation.studioId, outLocation.stageId),
+                              stageName(outLocation.stageId),
                               outLocation.positionType,
                               outLocation.exactLocationDescription,
-                            ]
-                              .filter(Boolean)
-                              .join(" → ")}
+                            ].filter(Boolean).join(" → ")}
                           </p>
                         </div>
+                        {forceOut && (
+                          <p className="text-[11px] text-status-amber">
+                            ⚠ Force check-out enabled — some items may already be checked out.
+                          </p>
+                        )}
                       </div>
 
+                      {outError && (
+                        <div className="bg-status-red-light border border-status-red/20 rounded-card px-4 py-3 text-[12px] text-status-red">
+                          {outError}
+                        </div>
+                      )}
+
                       <div className="flex gap-3">
-                        <Button variant="secondary" onClick={() => setOutStep("location")} className="flex-1">
-                          ← Back
-                        </Button>
-                        <Button variant="primary" size="lg" onClick={handleOutConfirm} className="flex-1">
-                          Confirm Check Out ({outBatch.length})
+                        <Button variant="secondary" onClick={() => setOutStep("location")} className="flex-1">← Back</Button>
+                        <Button
+                          variant="primary" size="lg" className="flex-1"
+                          disabled={checkOut.isPending}
+                          onClick={handleOutConfirm}
+                        >
+                          {checkOut.isPending ? "Checking out…" : `Confirm Check Out (${outBatch.length})`}
                         </Button>
                       </div>
                     </div>
@@ -410,10 +442,8 @@ export default function CheckInOutPage() {
           {/* ── CHECK IN ── */}
           {mode === "in" && (
             <>
-              {inSuccess ? (
-                <SuccessCard
-                  message={`${inBatch.length} item${inBatch.length !== 1 ? "s" : ""} returned successfully.`}
-                />
+              {checkIn.isSuccess ? (
+                <SuccessCard message={`${inBatch.length} item${inBatch.length !== 1 ? "s" : ""} returned successfully.`} />
               ) : (
                 <>
                   {/* Step 1: Scan */}
@@ -421,15 +451,34 @@ export default function CheckInOutPage() {
                     <div className="space-y-4">
                       <ScanArea onScan={handleScan} onManualEntry={handleScan} />
 
-                      {warnings.length > 0 && (
-                        <div className="space-y-2">
-                          {warnings.map((w) => (
-                            <ScanWarningBanner key={w.serial} warning={w} onDismiss={() =>
-                              setWarnings((p) => p.filter((x) => x.serial !== w.serial))
-                            } />
-                          ))}
-                        </div>
-                      )}
+                      <div className="relative">
+                        <input
+                          type="search"
+                          placeholder="Or search by name / serial…"
+                          value={scanSearch}
+                          onChange={(e) => setScanSearch(e.target.value)}
+                          className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+                        />
+                        {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
+                          <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-grey-mid rounded-card shadow-card overflow-hidden">
+                            {searchResults.items.filter((i) => i.status === "checked_out").slice(0, 6).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => { handleScan(item.serial); setScanSearch(""); }}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-grey-light border-b border-grey-mid last:border-b-0"
+                              >
+                                <span className="text-serial text-surface-dark">{item.serial}</span>
+                                <span className="text-[12px] text-grey flex-1">{item.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {warnings.map((w) => (
+                        <ScanWarningBanner key={w.serial} warning={w} onDismiss={() => clearWarning(w.serial)} />
+                      ))}
 
                       <BatchList
                         items={inBatch}
@@ -437,9 +486,7 @@ export default function CheckInOutPage() {
                         onClear={() => setInBatch([])}
                       />
                       <Button
-                        variant="primary"
-                        size="lg"
-                        className="w-full"
+                        variant="primary" size="lg" className="w-full"
                         disabled={inBatch.length === 0}
                         onClick={() => setInStep("condition")}
                       >
@@ -454,9 +501,7 @@ export default function CheckInOutPage() {
                       <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
                         <div className="px-5 py-4 border-b border-grey-mid">
                           <h2 className="text-[14px] font-semibold text-surface-dark">Item Condition</h2>
-                          <p className="text-[12px] text-grey mt-0.5">
-                            Check each item before confirming return
-                          </p>
+                          <p className="text-[12px] text-grey mt-0.5">Check each item before confirming return</p>
                         </div>
                         <div className="divide-y divide-grey-mid">
                           {inBatch.map((item) => (
@@ -468,31 +513,22 @@ export default function CheckInOutPage() {
                               <div className="flex gap-2 flex-wrap">
                                 {(["good", "needs-attention", "damaged"] as ConditionChoice[]).map((c) => (
                                   <button
-                                    key={c}
-                                    type="button"
+                                    key={c} type="button"
                                     onClick={() =>
                                       setInBatch((b) =>
-                                        b.map((i) =>
-                                          i.serial === item.serial ? { ...i, condition: c } : i
-                                        )
+                                        b.map((i) => i.serial === item.serial ? { ...i, condition: c } : i)
                                       )
                                     }
                                     className={[
                                       "px-2.5 py-1 rounded-btn text-[11px] font-semibold border transition-colors",
                                       item.condition === c
-                                        ? c === "good"
-                                          ? "bg-status-green text-white border-status-green"
-                                          : c === "needs-attention"
-                                          ? "bg-status-amber text-white border-status-amber"
+                                        ? c === "good" ? "bg-status-green text-white border-status-green"
+                                          : c === "needs-attention" ? "bg-status-amber text-white border-status-amber"
                                           : "bg-status-red text-white border-status-red"
                                         : "bg-white text-grey border-grey-mid hover:border-grey",
                                     ].join(" ")}
                                   >
-                                    {c === "good"
-                                      ? "Good"
-                                      : c === "needs-attention"
-                                      ? "Needs Attention"
-                                      : "Damaged"}
+                                    {c === "good" ? "Good" : c === "needs-attention" ? "Needs Attention" : "Damaged"}
                                   </button>
                                 ))}
                               </div>
@@ -507,18 +543,20 @@ export default function CheckInOutPage() {
                         </div>
                       )}
 
+                      {inError && (
+                        <div className="bg-status-red-light border border-status-red/20 rounded-card px-4 py-3 text-[12px] text-status-red">
+                          {inError}
+                        </div>
+                      )}
+
                       <div className="flex gap-3">
-                        <Button variant="secondary" onClick={() => setInStep("scan")} className="flex-1">
-                          ← Back
-                        </Button>
+                        <Button variant="secondary" onClick={() => setInStep("scan")} className="flex-1">← Back</Button>
                         <Button
-                          variant="primary"
-                          size="lg"
-                          disabled={inBatch.some((i) => !i.condition)}
+                          variant="primary" size="lg" className="flex-1"
+                          disabled={inBatch.some((i) => !i.condition) || checkIn.isPending}
                           onClick={handleInConfirm}
-                          className="flex-1"
                         >
-                          Confirm Return ({inBatch.length})
+                          {checkIn.isPending ? "Returning…" : `Confirm Return (${inBatch.length})`}
                         </Button>
                       </div>
                     </div>
@@ -540,37 +578,23 @@ function SuccessCard({ message }: { message: string }) {
     <div className="bg-white rounded-card border border-status-green/30 p-8 text-center">
       <div className="text-4xl mb-3">✅</div>
       <p className="text-[15px] font-semibold text-surface-dark">{message}</p>
+      <p className="text-[12px] text-grey mt-1">Dashboard stats will update shortly.</p>
     </div>
   );
 }
 
 const warningStyles: Record<ScanWarning["kind"], string> = {
-  duplicate:    "bg-grey-light border-grey-mid text-grey",
-  damaged:      "bg-status-red-light border-status-red/20 text-status-red",
+  duplicate:     "bg-grey-light border-grey-mid text-grey",
+  damaged:       "bg-status-red-light border-status-red/20 text-status-red",
   "wrong-state": "bg-status-amber-light border-status-amber/20 text-status-amber",
-  unknown:      "bg-grey-light border-grey-mid text-grey",
+  unknown:       "bg-grey-light border-grey-mid text-grey",
 };
 
-function ScanWarningBanner({
-  warning,
-  onDismiss,
-}: {
-  warning: ScanWarning;
-  onDismiss: () => void;
-}) {
+function ScanWarningBanner({ warning, onDismiss }: { warning: ScanWarning; onDismiss: () => void }) {
   return (
-    <div
-      className={`flex items-center gap-3 px-4 py-2.5 rounded-card border text-[12px] font-medium ${warningStyles[warning.kind]}`}
-    >
+    <div className={`flex items-center gap-3 px-4 py-2.5 rounded-card border text-[12px] font-medium ${warningStyles[warning.kind]}`}>
       <span className="flex-1">{warning.message}</span>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="text-inherit opacity-60 hover:opacity-100 text-base leading-none"
-        aria-label="Dismiss warning"
-      >
-        ×
-      </button>
+      <button type="button" onClick={onDismiss} className="opacity-60 hover:opacity-100 text-base leading-none" aria-label="Dismiss">×</button>
     </div>
   );
 }
