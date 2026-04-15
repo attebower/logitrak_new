@@ -32,6 +32,9 @@ const config: Config = {
           "red-light":    "#FEE2E2",
           teal:           "#0D9488",
           "teal-light":   "#CCFBF1",
+          // Under Repair — orange
+          orange:         "#EA580C",
+          "orange-light": "#FFF7ED",
         },
         grey: {
           DEFAULT: "#64748B",

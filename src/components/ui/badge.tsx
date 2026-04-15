@@ -41,8 +41,8 @@ const badgeVariants = cva(
          */
         repaired: "bg-status-teal-light text-status-teal before:text-status-teal",
 
-        // ── Under Repair (inline variant seen in Damage page) ───────
-        "under-repair": "bg-orange-50 text-orange-700 before:text-orange-500",
+        // ── Under Repair ─────────────────────────────────────────
+        "under-repair": "bg-status-orange-light text-status-orange before:text-status-orange",
 
         // ── Category chip (Equipment table) ─────────────────────────
         category: "bg-brand-blue-light text-brand-blue before:hidden",
