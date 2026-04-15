@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 const config: Config = {
   darkMode: ["class"],
@@ -31,6 +32,9 @@ const config: Config = {
           "red-light":    "#FEE2E2",
           teal:           "#0D9488",
           "teal-light":   "#CCFBF1",
+          // Under Repair — orange
+          orange:         "#EA580C",
+          "orange-light": "#FFF7ED",
         },
         grey: {
           DEFAULT: "#64748B",
@@ -66,9 +70,19 @@ const config: Config = {
       height: {
         topbar: "56px",
       },
+      keyframes: {
+        "scan-line": {
+          "0%":   { top: "10%" },
+          "50%":  { top: "85%" },
+          "100%": { top: "10%" },
+        },
+      },
+      animation: {
+        "scan-line": "scan-line 2s ease-in-out infinite",
+      },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 };
 
 export default config;

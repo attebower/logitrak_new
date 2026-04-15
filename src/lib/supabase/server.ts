@@ -14,7 +14,10 @@ export function createClient() {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
-          } catch {}
+          } catch {
+            // Intentional: cookies() is read-only in Server Components.
+            // Cookie writes only succeed in Server Actions and Route Handlers.
+          }
         },
       },
     }
