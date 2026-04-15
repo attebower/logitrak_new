@@ -14,6 +14,8 @@ import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { EquipmentListRow, EquipmentTableHead } from "@/components/shared/EquipmentListRow";
 import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
+import { FilterTabs } from "@/components/shared/FilterTabs";
+import { FormInput, FormSelect } from "@/components/shared/FormField";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { EquipmentItem } from "@/components/shared/EquipmentListRow";
@@ -182,22 +184,11 @@ export default function EquipmentPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="flex-1 min-w-[200px] bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
           />
-          <div className="flex gap-1">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f.value}
-                onClick={() => setStatusFilter(f.value)}
-                className={[
-                  "px-3 py-1.5 rounded-btn text-[11px] font-semibold transition-colors",
-                  statusFilter === f.value
-                    ? "bg-brand-blue text-white"
-                    : "bg-grey-light text-grey hover:bg-grey-mid",
-                ].join(" ")}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <FilterTabs
+            options={STATUS_FILTERS.map((f) => ({ label: f.label, value: f.value }))}
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as StatusFilter)}
+          />
           {listData && (
             <span className="text-[11px] text-grey">
               {listData.total} item{listData.total !== 1 ? "s" : ""}
@@ -213,40 +204,31 @@ export default function EquipmentPage() {
               <button type="button" onClick={() => setShowAddForm(false)} className="text-grey hover:text-surface-dark text-lg">×</button>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-caption text-grey uppercase mb-1.5">Serial (5 digits)</label>
-                <input
-                  required
-                  pattern="\d{5}"
-                  value={newSerial}
-                  onChange={(e) => setNewSerial(e.target.value)}
-                  placeholder="00001"
-                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue font-mono"
-                />
-              </div>
-              <div>
-                <label className="block text-caption text-grey uppercase mb-1.5">Equipment Name</label>
-                <input
-                  required
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. Arri SkyPanel S60-C"
-                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
-                />
-              </div>
-              <div>
-                <label className="block text-caption text-grey uppercase mb-1.5">Category</label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
-                >
-                  <option value="">No category</option>
-                  {categories?.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
+              <FormInput
+                label="Serial (5 digits)"
+                required
+                pattern="\d{5}"
+                value={newSerial}
+                onChange={(e) => setNewSerial(e.target.value)}
+                placeholder="00001"
+              />
+              <FormInput
+                label="Equipment Name"
+                required
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Arri SkyPanel S60-C"
+              />
+              <FormSelect
+                label="Category"
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+              >
+                <option value="">No category</option>
+                {categories?.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </FormSelect>
             </div>
             {addError && (
               <p className="mt-3 text-[12px] text-status-red">{addError}</p>
