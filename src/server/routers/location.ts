@@ -56,10 +56,80 @@ const studioRouter = router({
         });
         // BUG-011
         await tx.activityEvent.create({
-          data: { workspaceId: ctx.workspaceId!, actorId: ctx.session!.user.id, eventType: "studio_created", description: `Studio “${input.name}” created`, entityType: "studio", entityId: studio.id },
+          data: { workspaceId: ctx.workspaceId!, actorId: ctx.session!.user.id, eventType: "studio_created", description: `Studio "${input.name}" created`, entityType: "studio", entityId: studio.id },
         });
         return studio;
       });
+    }),
+
+  update: workspaceProcedure
+    .input(
+      z.object({
+        workspaceId: z.string(),
+        studioId: z.string(),
+        name: z.string().min(1).max(100).optional(),
+        displayId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      const data: Record<string, unknown> = {};
+      if (input.name !== undefined) data.name = input.name;
+      if (input.displayId !== undefined) data.displayId = input.displayId;
+
+      if (Object.keys(data).length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No fields provided to update" });
+      }
+
+      const result = await ctx.prisma.studio.updateMany({
+        where: { id: input.studioId, workspaceId: ctx.workspaceId! },
+        data,
+      });
+
+      if (result.count === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Studio not found" });
+      }
+
+      return ctx.prisma.studio.findUnique({ where: { id: input.studioId } });
+    }),
+
+  delete: workspaceProcedure
+    .input(
+      z.object({
+        workspaceId: z.string(),
+        studioId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      // Check no active equipment is checked out to this studio
+      const activeCheckout = await ctx.prisma.checkEvent.findFirst({
+        where: {
+          workspaceId: ctx.workspaceId!,
+          studioId: input.studioId,
+          eventType: "check_out",
+          equipment: { status: "checked_out" },
+        },
+      });
+
+      if (activeCheckout) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Cannot delete studio with active equipment checked out to it",
+        });
+      }
+
+      const result = await ctx.prisma.studio.deleteMany({
+        where: { id: input.studioId, workspaceId: ctx.workspaceId! },
+      });
+
+      if (result.count === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Studio not found" });
+      }
+
+      return { deleted: true, studioId: input.studioId };
     }),
 });
 
@@ -112,10 +182,71 @@ const stageRouter = router({
         });
         // BUG-011
         await tx.activityEvent.create({
-          data: { workspaceId: ctx.workspaceId!, actorId: ctx.session!.user.id, eventType: "stage_created", description: `Stage “${input.name}” created`, entityType: "stage", entityId: stage.id },
+          data: { workspaceId: ctx.workspaceId!, actorId: ctx.session!.user.id, eventType: "stage_created", description: `Stage "${input.name}" created`, entityType: "stage", entityId: stage.id },
         });
         return stage;
       });
+    }),
+
+  update: workspaceProcedure
+    .input(
+      z.object({
+        workspaceId: z.string(),
+        stageId: z.string(),
+        name: z.string().min(1).max(100),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      const result = await ctx.prisma.stage.updateMany({
+        where: { id: input.stageId, studio: { workspaceId: ctx.workspaceId! } },
+        data: { name: input.name },
+      });
+
+      if (result.count === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Stage not found" });
+      }
+
+      return ctx.prisma.stage.findUnique({ where: { id: input.stageId } });
+    }),
+
+  delete: workspaceProcedure
+    .input(
+      z.object({
+        workspaceId: z.string(),
+        stageId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      // Check no active equipment is checked out to this stage
+      const activeCheckout = await ctx.prisma.checkEvent.findFirst({
+        where: {
+          workspaceId: ctx.workspaceId!,
+          stageId: input.stageId,
+          eventType: "check_out",
+          equipment: { status: "checked_out" },
+        },
+      });
+
+      if (activeCheckout) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Cannot delete stage with active equipment checked out to it",
+        });
+      }
+
+      const result = await ctx.prisma.stage.deleteMany({
+        where: { id: input.stageId, studio: { workspaceId: ctx.workspaceId! } },
+      });
+
+      if (result.count === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Stage not found" });
+      }
+
+      return { deleted: true, stageId: input.stageId };
     }),
 });
 
@@ -171,10 +302,80 @@ const setRouter = router({
         });
         // BUG-011
         await tx.activityEvent.create({
-          data: { workspaceId: ctx.workspaceId!, actorId: ctx.session!.user.id, eventType: "set_created", description: `Set “${input.name}” created`, entityType: "set", entityId: set.id },
+          data: { workspaceId: ctx.workspaceId!, actorId: ctx.session!.user.id, eventType: "set_created", description: `Set "${input.name}" created`, entityType: "set", entityId: set.id },
         });
         return set;
       });
+    }),
+
+  update: workspaceProcedure
+    .input(
+      z.object({
+        workspaceId: z.string(),
+        setId: z.string(),
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, MANAGER_ROLES);
+
+      const data: Record<string, unknown> = {};
+      if (input.name !== undefined) data.name = input.name;
+      if (input.description !== undefined) data.description = input.description;
+
+      if (Object.keys(data).length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No fields provided to update" });
+      }
+
+      const result = await ctx.prisma.set.updateMany({
+        where: { id: input.setId, stage: { studio: { workspaceId: ctx.workspaceId! } } },
+        data,
+      });
+
+      if (result.count === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Set not found" });
+      }
+
+      return ctx.prisma.set.findUnique({ where: { id: input.setId } });
+    }),
+
+  delete: workspaceProcedure
+    .input(
+      z.object({
+        workspaceId: z.string(),
+        setId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, MANAGER_ROLES);
+
+      // Check no active equipment is checked out to this set
+      const activeCheckout = await ctx.prisma.checkEvent.findFirst({
+        where: {
+          workspaceId: ctx.workspaceId!,
+          setId: input.setId,
+          eventType: "check_out",
+          equipment: { status: "checked_out" },
+        },
+      });
+
+      if (activeCheckout) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Cannot delete set with active equipment checked out to it",
+        });
+      }
+
+      const result = await ctx.prisma.set.deleteMany({
+        where: { id: input.setId, stage: { studio: { workspaceId: ctx.workspaceId! } } },
+      });
+
+      if (result.count === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Set not found" });
+      }
+
+      return { deleted: true, setId: input.setId };
     }),
 });
 

@@ -7,6 +7,9 @@ import { locationRouter } from "./location";
 import { categoryRouter } from "./category";
 import { checkEventRouter } from "./checkEvent";
 import { damageRouter } from "./damage";
+import { reportsRouter } from "./reports";
+import { teamRouter } from "./team";
+import { adminRouter } from "./admin";
 
 export const appRouter = router({
   workspace: workspaceRouter,
@@ -17,6 +20,9 @@ export const appRouter = router({
   category: categoryRouter,
   checkEvent: checkEventRouter,
   damage: damageRouter,
+  reports: reportsRouter,
+  team: teamRouter,
+  admin: adminRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -27,11 +27,16 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Unauthenticated: redirect to sign-in (except auth routes)
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/sign-in") ||
-                      request.nextUrl.pathname.startsWith("/sign-up");
+  // Unauthenticated: redirect to sign-in (except public routes)
+  const pathname = request.nextUrl.pathname;
+  const isAuthRoute = pathname.startsWith("/sign-in") ||
+                      pathname.startsWith("/sign-up") ||
+                      pathname.startsWith("/auth");
+  const isPublicRoute = pathname === "/" ||
+                        pathname.startsWith("/pricing") ||
+                        pathname.startsWith("/about");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isPublicRoute) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
