@@ -243,13 +243,15 @@ model CheckEvent {
   exactLocationDescription String?        // only for inside_prop_make / in_prop_dressing
   createdAt                DateTime       @default(now())
 
-  workspace Workspace   @relation(fields: [workspaceId], references: [id])
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   equipment Equipment   @relation(fields: [equipmentId], references: [id])
   user      UserProfile @relation(fields: [userId], references: [id])
   studio    Studio?     @relation(fields: [studioId], references: [id])
   stage     Stage?      @relation(fields: [stageId], references: [id])
   set       Set?        @relation(fields: [setId], references: [id])
 
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([equipmentId, createdAt(sort: Desc)])
   @@map("check_events")
 }
 
@@ -294,6 +296,8 @@ model ActivityEvent {
   workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   actor     UserProfile @relation(fields: [actorId], references: [id])
 
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
   @@map("activity_events")
 }
 
@@ -307,7 +311,7 @@ model DamageReport {
   reportedAt     DateTime @default(now())
   createdAt      DateTime @default(now())
 
-  workspace  Workspace    @relation(fields: [workspaceId], references: [id])
+  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   equipment  Equipment    @relation(fields: [equipmentId], references: [id])
   reporter   UserProfile  @relation(fields: [reporterId], references: [id])
   repairLogs RepairLog[]
@@ -327,7 +331,7 @@ model RepairLog {
   repairedAt     DateTime @default(now())
   createdAt      DateTime @default(now())
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id])
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   equipment    Equipment     @relation(fields: [equipmentId], references: [id])
   damageReport DamageReport? @relation(fields: [damageReportId], references: [id])
   repairer     UserProfile?  @relation(fields: [repairerId], references: [id])

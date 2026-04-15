@@ -67,6 +67,16 @@ const config: Config = {
       height: {
         topbar: "56px",
       },
+      keyframes: {
+        "scan-line": {
+          "0%":   { top: "10%" },
+          "50%":  { top: "85%" },
+          "100%": { top: "10%" },
+        },
+      },
+      animation: {
+        "scan-line": "scan-line 2s ease-in-out infinite",
+      },
     },
   },
   plugins: [tailwindcssAnimate],

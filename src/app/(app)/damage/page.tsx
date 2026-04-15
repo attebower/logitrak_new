@@ -1,56 +1,101 @@
 "use client";
 
+/**
+ * Damage Reports page — Sprint 2
+ * Uses Echo's DamageCard / DamageCardList components.
+ *
+ * TODO Sprint 2: replace mock data with trpc.damage.list.useQuery()
+ * TODO Sprint 2: trpc.damage.report.useMutation() on form submit
+ * TODO Sprint 2: trpc.damage.markRepaired.useMutation() on Log Repair
+ */
+
 import { useState } from "react";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatCard } from "@/components/shared/StatCard";
+import { DamageCardList } from "@/components/shared/DamageCard";
+import type { DamageReport } from "@/components/shared/DamageCard";
 
-// TODO Sprint 2: replace table data with trpc.damage.list.useQuery()
-const MOCK_DAMAGE = [
-  { id: "1", asset: "Astera Titan Tube",    serial: "AT-002", reportedBy: "Emma W.",  date: "Today 09:31",  status: "damaged"     as const },
-  { id: "2", asset: "Kinoflo Freestyle 21", serial: "KF-001", reportedBy: "Tom R.",   date: "Yesterday",    status: "repaired"    as const },
-  { id: "3", asset: "Arri SkyPanel S30",    serial: "SP-003", reportedBy: "Sarah K.", date: "12 Apr",       status: "under-repair" as const },
-  { id: "4", asset: "Dedolight DLED4",      serial: "DD-002", reportedBy: "James O.", date: "10 Apr",       status: "damaged"     as const },
-  { id: "5", asset: "Litepanels Gemini",    serial: "LG-001", reportedBy: "Mike T.",  date: "8 Apr",        status: "repaired"    as const },
+// ── Mock data ──────────────────────────────────────────────────────────────
+
+const MOCK_DAMAGE: DamageReport[] = [
+  {
+    id: "1",
+    serial: "AT-002",
+    type: "Astera Titan Tube",
+    description: "Cracked diffuser panel. Unit still functional but diffuser needs replacement.",
+    location: "Stage 7A — Throne Room",
+    reportedBy: "Emma W.",
+    reportedAt: "2026-04-15T09:31:00Z",
+    status: "damaged",
+  },
+  {
+    id: "2",
+    serial: "KF-001",
+    type: "Kinoflo Freestyle 21",
+    description: "Ballast failure — unit not powering on.",
+    location: "Lighting Store",
+    reportedBy: "Tom R.",
+    reportedAt: "2026-04-14T14:00:00Z",
+    status: "repaired",
+  },
+  {
+    id: "3",
+    serial: "SP-003",
+    type: "Arri SkyPanel S30",
+    description: "Controller PCB fault. Shows error code E-07 on boot.",
+    location: "Stage 3 — Castle Hall",
+    reportedBy: "Sarah K.",
+    reportedAt: "2026-04-12T11:15:00Z",
+    status: "under-repair",
+  },
+  {
+    id: "4",
+    serial: "DD-002",
+    type: "Dedolight DLED4",
+    description: "Lens mount cracked. Light leaking from housing seam.",
+    reportedBy: "James O.",
+    reportedAt: "2026-04-10T09:00:00Z",
+    status: "damaged",
+  },
+  {
+    id: "5",
+    serial: "LG-001",
+    type: "Litepanels Gemini",
+    description: "Fan seized. Unit running hot.",
+    reportedBy: "Mike T.",
+    reportedAt: "2026-04-08T16:00:00Z",
+    status: "repaired",
+  },
 ];
 
-const EQUIPMENT_OPTIONS = [
-  "Arri SkyPanel S60-C (SP-001)",
-  "Arri SkyPanel S60-C (SP-002)",
-  "Astera Titan Tube (AT-001)",
-  "Astera Titan Tube (AT-002)",
-  "Creamsource Vortex8 (CV-001)",
-  "Dedolight DLH4 (DD-001)",
-  "Kinoflo Freestyle 21 (KF-001)",
-  "Litepanels Astra 6X (LA-001)",
-];
+const SEVERITY_OPTIONS = ["Minor", "Moderate", "Severe"] as const;
 
-type DamageStatus = "damaged" | "under-repair" | "repaired";
+// ── Component ──────────────────────────────────────────────────────────────
 
-function statusLabel(status: DamageStatus) {
-  if (status === "under-repair") return "Under Repair";
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
+type FilterStatus = "all" | "damaged" | "under-repair" | "repaired";
 
 export default function DamagePage() {
-  const [showForm, setShowForm]         = useState(false);
-  const [equipSearch, setEquipSearch]   = useState("");
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [description, setDescription]  = useState("");
-  const [severity, setSeverity]         = useState("");
+  const [showForm, setShowForm]     = useState(false);
+  const [filter, setFilter]         = useState<FilterStatus>("all");
+  const [formSerial, setFormSerial] = useState("");
+  const [formDesc, setFormDesc]     = useState("");
+  const [formSeverity, setFormSeverity] = useState<typeof SEVERITY_OPTIONS[number]>("Minor");
 
-  const filteredEquip = equipSearch.trim()
-    ? EQUIPMENT_OPTIONS.filter((e) =>
-        e.toLowerCase().includes(equipSearch.toLowerCase())
-      )
-    : EQUIPMENT_OPTIONS;
+  const filtered = MOCK_DAMAGE.filter(
+    (r) => filter === "all" || r.status === filter
+  );
 
-  function handleSubmit() {
+  const activeDamage   = MOCK_DAMAGE.filter((r) => r.status === "damaged").length;
+  const underRepair    = MOCK_DAMAGE.filter((r) => r.status === "under-repair").length;
+  const repairedThisMonth = MOCK_DAMAGE.filter((r) => r.status === "repaired").length;
+
+  function handleFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
     // TODO Sprint 2: trpc.damage.report.useMutation()
     setShowForm(false);
-    setEquipSearch("");
-    setDescription("");
-    setSeverity("");
+    setFormSerial("");
+    setFormDesc("");
   }
 
   return (
@@ -59,138 +104,103 @@ export default function DamagePage() {
         title="Damage Reports"
         actions={
           <Button variant="primary" size="sm" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "Cancel" : "+ Report Damage"}
+            {showForm ? "× Cancel" : "+ Report Damage"}
           </Button>
         }
       />
-      <div className="flex-1 overflow-y-auto p-6">
-        {/* Stat cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-card border border-grey-mid shadow-card p-4 border-t-4 border-t-status-red">
-            <p className="text-[11px] font-semibold uppercase text-grey mb-1">Active Damage</p>
-            <p className="text-[28px] font-extrabold text-status-red leading-none">21</p>
-          </div>
-          <div className="bg-white rounded-card border border-grey-mid shadow-card p-4 border-t-4 border-t-status-amber">
-            <p className="text-[11px] font-semibold uppercase text-grey mb-1">Under Repair</p>
-            <p className="text-[28px] font-extrabold text-status-amber leading-none">4</p>
-          </div>
-          <div className="bg-white rounded-card border border-grey-mid shadow-card p-4 border-t-4 border-t-status-teal">
-            <p className="text-[11px] font-semibold uppercase text-grey mb-1">Repaired This Month</p>
-            <p className="text-[28px] font-extrabold text-status-teal leading-none">8</p>
-          </div>
+
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+        {/* Mini stats */}
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard color="red"   icon="⚠" label="Active Damage"      value={activeDamage}      />
+          <StatCard color="amber" icon="🔧" label="Under Repair"       value={underRepair}       />
+          <StatCard color="teal"  icon="✓" label="Repaired This Month" value={repairedThisMonth} />
         </div>
 
-        {/* Inline report form */}
+        {/* Report damage form */}
         {showForm && (
-          <div className="bg-white rounded-card border border-grey-mid shadow-card p-5 mb-6">
-            <h2 className="text-[14px] font-bold text-surface-dark mb-4">New Damage Report</h2>
-            <div className="space-y-4">
-              {/* Equipment search */}
-              <div className="relative">
-                <label className="block text-[11px] font-semibold uppercase text-grey mb-1.5">Equipment</label>
+          <form
+            onSubmit={handleFormSubmit}
+            className="bg-white rounded-card border border-grey-mid p-5 space-y-4"
+          >
+            <h2 className="text-[14px] font-semibold text-surface-dark">Report Damage</h2>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-caption text-grey uppercase mb-1.5">Serial Number</label>
                 <input
                   type="text"
-                  value={equipSearch}
-                  onChange={(e) => { setEquipSearch(e.target.value); setShowDropdown(true); }}
-                  onFocus={() => setShowDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-                  placeholder="Search equipment…"
-                  className="w-full rounded-btn border border-grey-mid bg-white px-3 py-2 text-[13px] text-surface-dark placeholder:text-grey focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                />
-                {showDropdown && filteredEquip.length > 0 && (
-                  <div className="absolute z-10 top-full left-0 w-full mt-0.5 bg-white border border-grey-mid rounded-btn shadow-card max-h-40 overflow-y-auto">
-                    {filteredEquip.map((opt) => (
-                      <button
-                        key={opt}
-                        className="w-full text-left px-3 py-2 text-[13px] text-surface-dark hover:bg-grey-light transition-colors"
-                        onMouseDown={() => { setEquipSearch(opt); setShowDropdown(false); }}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-[11px] font-semibold uppercase text-grey mb-1.5">
-                  Description <span className="text-status-red">*</span>
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe the damage…"
-                  rows={3}
-                  className="w-full rounded-btn border border-grey-mid bg-white px-3 py-2 text-[13px] text-surface-dark placeholder:text-grey focus:outline-none focus:ring-2 focus:ring-brand-blue/30 resize-none"
+                  required
+                  value={formSerial}
+                  onChange={(e) => setFormSerial(e.target.value.toUpperCase())}
+                  placeholder="e.g. AT-002"
+                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
                 />
               </div>
-
-              {/* Severity */}
               <div>
-                <label className="block text-[11px] font-semibold uppercase text-grey mb-1.5">Severity</label>
+                <label className="block text-caption text-grey uppercase mb-1.5">Severity</label>
                 <select
-                  value={severity}
-                  onChange={(e) => setSeverity(e.target.value)}
-                  className="w-full rounded-btn border border-grey-mid bg-white px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
+                  value={formSeverity}
+                  onChange={(e) => setFormSeverity(e.target.value as typeof formSeverity)}
+                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
                 >
-                  <option value="" disabled>Select severity…</option>
-                  <option value="Minor">Minor</option>
-                  <option value="Moderate">Moderate</option>
-                  <option value="Severe">Severe</option>
+                  {SEVERITY_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
                 </select>
               </div>
-
-              <Button
-                variant="primary"
-                disabled={!description.trim()}
-                onClick={handleSubmit}
-              >
-                Submit Report
-              </Button>
             </div>
-          </div>
+
+            <div>
+              <label className="block text-caption text-grey uppercase mb-1.5">Description</label>
+              <textarea
+                required
+                value={formDesc}
+                onChange={(e) => setFormDesc(e.target.value)}
+                placeholder="Describe the damage in detail…"
+                rows={3}
+                className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue resize-none"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" type="submit">Submit Report</Button>
+              <Button variant="secondary" size="sm" type="button" onClick={() => setShowForm(false)}>Cancel</Button>
+            </div>
+          </form>
         )}
 
-        {/* Table */}
-        <div className="bg-white rounded-card border border-grey-mid shadow-card overflow-hidden">
-          <div className="px-5 py-4 border-b border-grey-mid">
-            <h2 className="text-[14px] font-semibold text-surface-dark">All Reports</h2>
-          </div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-grey-mid bg-grey-light">
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase text-grey tracking-wide">Asset</th>
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase text-grey tracking-wide">Serial</th>
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase text-grey tracking-wide">Reported By</th>
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase text-grey tracking-wide">Date</th>
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase text-grey tracking-wide">Status</th>
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase text-grey tracking-wide">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-grey-mid">
-              {MOCK_DAMAGE.map((item) => (
-                <tr key={item.id} className="hover:bg-grey-light transition-colors">
-                  <td className="px-4 py-3 text-[13px] font-medium text-surface-dark">{item.asset}</td>
-                  <td className="px-4 py-3 text-[13px] text-grey font-mono">{item.serial}</td>
-                  <td className="px-4 py-3 text-[13px] text-surface-dark">{item.reportedBy}</td>
-                  <td className="px-4 py-3 text-[13px] text-grey">{item.date}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={item.status}>{statusLabel(item.status)}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1.5">
-                      <Button variant="secondary" size="sm">View</Button>
-                      {item.status !== "repaired" && (
-                        <Button variant="secondary" size="sm">Mark Repaired</Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Filter tabs */}
+        <div className="flex gap-1">
+          {(["all", "damaged", "under-repair", "repaired"] as FilterStatus[]).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={[
+                "px-3 py-1.5 rounded-btn text-[11px] font-semibold transition-colors capitalize",
+                filter === f
+                  ? "bg-brand-blue text-white"
+                  : "bg-grey-light text-grey hover:bg-grey-mid",
+              ].join(" ")}
+            >
+              {f === "all" ? "All" : f === "under-repair" ? "Under Repair" : f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
         </div>
+
+        {/* Damage cards */}
+        <DamageCardList
+          reports={filtered}
+          onLogRepair={(id) => {
+            // TODO Sprint 2: trpc.damage.markUnderRepair.useMutation()
+            console.log("Log repair for", id);
+          }}
+          onView={(id) => {
+            // TODO Sprint 2: open EquipmentDetailPanel for this item
+            console.log("View equipment for damage", id);
+          }}
+        />
       </div>
     </>
   );
