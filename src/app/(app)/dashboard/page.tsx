@@ -1,75 +1,171 @@
+"use client";
+
+/**
+ * Dashboard — wired to live tRPC data.
+ *
+ * trpc.dashboard.stats  → stat cards (total, available, checked out, damaged)
+ * trpc.activity.list    → activity feed (last 20 events)
+ */
+
+import Link from "next/link";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { StatCard, StatGrid } from "@/components/shared/StatCard";
 import { Badge } from "@/components/ui/badge";
+import { trpc } from "@/lib/trpc/client";
+import { useWorkspace } from "@/lib/workspace-context";
+import type { BadgeProps } from "@/components/ui/badge";
 
-// TODO: wire to trpc.dashboard.stats.useQuery({ workspaceId }) once workspace context is available
-const MOCK_STATS = [
-  { color: "blue"  as const, icon: "⊞", label: "Total Assets",  value: 847, change: "↑ 12 this week",    changeColor: "green" as const },
-  { color: "green" as const, icon: "✓", label: "Available",     value: 412, change: "48.6% of total",     changeColor: "grey"  as const },
-  { color: "amber" as const, icon: "⇄", label: "Checked Out",   value: 414, change: "Across 6 locations", changeColor: "grey"  as const },
-  { color: "red"   as const, icon: "⚠", label: "Damaged",       value: 21,  change: "3 reported today",   changeColor: "red"   as const },
-];
+// ── Quick actions (static — no data dependency) ────────────────────────────
 
 const QUICK_ACTIONS = [
-  { label: "Check Out Equipment", icon: "⇄", desc: "Sign out items to crew" },
-  { label: "Check In Equipment",  icon: "↩", desc: "Return items to stock" },
-  { label: "Report Damage",       icon: "⚠", desc: "Log a damaged item" },
-  { label: "Add Equipment",       icon: "+", desc: "Register new assets" },
-  { label: "Scan QR Code",        icon: "⬛", desc: "Scan an asset label" },
-  { label: "Export Report",       icon: "📋", desc: "Download CSV summary" },
+  { label: "Check Out",      icon: "⇄",  desc: "Sign out items to crew",  href: "/checkinout" },
+  { label: "Check In",       icon: "↩",  desc: "Return items to stock",   href: "/checkinout" },
+  { label: "Report Damage",  icon: "⚠",  desc: "Log a damaged item",      href: "/damage" },
+  { label: "Add Equipment",  icon: "+",  desc: "Register new assets",     href: "/equipment" },
+  { label: "Equipment List", icon: "≡",  desc: "Browse all assets",       href: "/equipment" },
+  { label: "Repair Log",     icon: "🔧", desc: "View repair history",     href: "/damage/repair" },
 ];
 
-const ACTIVITY_FEED = [
-  { time: "2m ago",  user: "Sarah K.",  action: "checked out",        item: "Arri SkyPanel S60-C x2",     status: "checked-out" as const },
-  { time: "14m ago", user: "Tom R.",    action: "returned",           item: "Dedolight DLH4 Tungsten x1", status: "available"   as const },
-  { time: "31m ago", user: "Emma W.",   action: "reported damage on", item: "Astera Titan Tube x1",       status: "damaged"     as const },
-  { time: "1h ago",  user: "James O.",  action: "checked out",        item: "Creamsource Vortex8 x1",     status: "checked-out" as const },
-  { time: "2h ago",  user: "System",    action: "marked repaired",    item: "Kinoflo Freestyle 21 x1",    status: "repaired"    as const },
-];
+// ── Activity event → display label ────────────────────────────────────────
+
+function eventActionLabel(eventType: string): string {
+  const map: Record<string, string> = {
+    check_out:     "checked out",
+    check_in:      "returned",
+    damage_report: "reported damage on",
+    repair_logged: "marked repaired",
+    equipment_add: "added",
+    status_change: "updated",
+  };
+  return map[eventType] ?? eventType.replace(/_/g, " ");
+}
+
+function eventBadgeVariant(eventType: string): BadgeProps["variant"] {
+  const map: Record<string, BadgeProps["variant"]> = {
+    check_out:     "checked-out",
+    check_in:      "available",
+    damage_report: "damaged",
+    repair_logged: "repaired",
+  };
+  return map[eventType] ?? "default";
+}
+
+function relativeTime(date: Date | string): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1)  return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { workspaceId, workspaceName } = useWorkspace();
+
+  const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery(
+    { workspaceId },
+    { refetchInterval: 30_000 } // refresh every 30s
+  );
+
+  const { data: activity, isLoading: activityLoading } = trpc.activity.list.useQuery(
+    { workspaceId, limit: 20 },
+    { refetchInterval: 30_000 }
+  );
+
   return (
     <>
       <AppTopbar
         title="Dashboard"
-        context="🎬 Series 4 Production"
+        context={`🎬 ${workspaceName}`}
         actions={
           <>
             <Button variant="secondary" size="sm">Export</Button>
-            <Button variant="primary" size="sm">+ Add Equipment</Button>
+            <Button variant="primary" size="sm" asChild>
+              <Link href="/equipment">+ Add Equipment</Link>
+            </Button>
           </>
         }
       />
+
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Stat cards */}
         <StatGrid>
-          {MOCK_STATS.map((s) => (
-            <StatCard key={s.label} {...s} />
-          ))}
+          <StatCard
+            color="blue"
+            icon="⊞"
+            label="Total Assets"
+            value={statsLoading ? "—" : (stats?.totalEquipment ?? 0)}
+          />
+          <StatCard
+            color="green"
+            icon="✓"
+            label="Available"
+            value={statsLoading ? "—" : (stats?.available ?? 0)}
+            change={
+              stats && stats.totalEquipment > 0
+                ? `${((stats.available / stats.totalEquipment) * 100).toFixed(1)}% of total`
+                : undefined
+            }
+            changeColor="grey"
+          />
+          <StatCard
+            color="amber"
+            icon="⇄"
+            label="Checked Out"
+            value={statsLoading ? "—" : (stats?.checkedOut ?? 0)}
+          />
+          <StatCard
+            color="red"
+            icon="⚠"
+            label="Damaged"
+            value={statsLoading ? "—" : (stats?.damaged ?? 0)}
+            changeColor="red"
+          />
         </StatGrid>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Activity feed */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-card border border-grey-mid shadow-card overflow-hidden">
               <div className="px-5 py-4 border-b border-grey-mid">
                 <h2 className="text-[14px] font-semibold text-surface-dark">Recent Activity</h2>
               </div>
-              <div className="divide-y divide-grey-mid">
-                {ACTIVITY_FEED.map((entry, i) => (
-                  <div key={i} className="flex items-center gap-3 px-5 py-3">
-                    <div className="text-[11px] text-grey w-12 flex-shrink-0">{entry.time}</div>
-                    <div className="flex-1 text-[13px] text-surface-dark">
-                      <span className="font-medium">{entry.user}</span>{" "}
-                      <span className="text-grey">{entry.action}</span>{" "}
-                      <span>{entry.item}</span>
+
+              {activityLoading ? (
+                <ActivitySkeleton />
+              ) : !activity || activity.length === 0 ? (
+                <div className="px-5 py-8 text-center text-[13px] text-grey">
+                  No activity yet — check out some equipment to get started.
+                </div>
+              ) : (
+                <div className="divide-y divide-grey-mid">
+                  {activity.map((event) => (
+                    <div key={event.id} className="flex items-center gap-3 px-5 py-3">
+                      <div className="text-[11px] text-grey w-14 flex-shrink-0">
+                        {relativeTime(event.createdAt)}
+                      </div>
+                      <div className="flex-1 text-[13px] text-surface-dark">
+                        <span className="font-medium">
+                          {event.actor?.displayName ?? event.actor?.email ?? "System"}
+                        </span>{" "}
+                        <span className="text-grey">{eventActionLabel(event.eventType)}</span>
+                        {event.equipmentName && (
+                          <> <span>{event.equipmentName}</span></>
+                        )}
+                      </div>
+                      <Badge variant={eventBadgeVariant(event.eventType)} />
                     </div>
-                    <Badge variant={entry.status} />
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
+          {/* Quick actions */}
           <div>
             <div className="bg-white rounded-card border border-grey-mid shadow-card overflow-hidden">
               <div className="px-5 py-4 border-b border-grey-mid">
@@ -77,11 +173,17 @@ export default function DashboardPage() {
               </div>
               <div className="grid grid-cols-2 gap-px bg-grey-mid">
                 {QUICK_ACTIONS.map((action) => (
-                  <button key={action.label} className="bg-white hover:bg-grey-light transition-colors p-4 text-left group">
+                  <Link
+                    key={action.label}
+                    href={action.href}
+                    className="bg-white hover:bg-grey-light transition-colors p-4 text-left group"
+                  >
                     <div className="text-2xl mb-1.5">{action.icon}</div>
-                    <div className="text-[12px] font-semibold text-surface-dark group-hover:text-brand-blue transition-colors">{action.label}</div>
+                    <div className="text-[12px] font-semibold text-surface-dark group-hover:text-brand-blue transition-colors">
+                      {action.label}
+                    </div>
                     <div className="text-[11px] text-grey mt-0.5">{action.desc}</div>
-                  </button>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -89,5 +191,19 @@ export default function DashboardPage() {
         </div>
       </div>
     </>
+  );
+}
+
+function ActivitySkeleton() {
+  return (
+    <div className="divide-y divide-grey-mid">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-5 py-3 animate-pulse">
+          <div className="w-14 h-3 bg-grey-mid rounded" />
+          <div className="flex-1 h-3 bg-grey-mid rounded" />
+          <div className="w-16 h-5 bg-grey-mid rounded-badge" />
+        </div>
+      ))}
+    </div>
   );
 }

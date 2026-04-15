@@ -15,7 +15,7 @@ export type Context = {
 };
 
 export async function createTRPCContext(
-  _opts: FetchCreateContextFnOptions
+  _opts: FetchCreateContextFnOptions // eslint-disable-line @typescript-eslint/no-unused-vars
 ): Promise<Context> {
   const supabase = createClient();
   const {

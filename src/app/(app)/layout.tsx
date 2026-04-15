@@ -1,21 +1,21 @@
 /**
  * App shell layout — Server Component.
  *
- * Performs server-side auth via Supabase before rendering any app UI.
- * Unauthenticated requests are redirected to /sign-in.
+ * Auth gate: redirects unauthenticated users to /sign-in.
+ * Workspace: fetches the user's first active workspace via Prisma directly
+ * (cheaper than a tRPC round-trip at layout level) and passes it into
+ * WorkspaceProvider so all client components have access to workspaceId.
  *
- * Active route highlighting is handled inside AppSidebar via usePathname(),
- * so this layout does not need to be a Client Component.
- *
- * MOCK_USER (name/initials/role) will be replaced with a workspace membership
- * query once Sage's tRPC procedures are live in Sprint 2.
+ * If the user has no workspace yet, redirects to /onboarding.
  */
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { prisma } from "@/lib/prisma";
 import { AppSidebar } from "@/components/shared/AppSidebar";
-import type { NavSection } from "@/components/shared/AppSidebar";
 import { TRPCProvider } from "@/lib/trpc/provider";
+import { WorkspaceProvider } from "@/lib/workspace-context";
+import type { NavSection } from "@/components/shared/AppSidebar";
 
 const NAV_SECTIONS: NavSection[] = [
   {
@@ -30,7 +30,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Monitor",
     items: [
       { label: "Reports", href: "/reports", icon: "📋" },
-      { label: "Damage",  href: "/damage",  icon: "⚠", badge: 21 },
+      { label: "Damage",  href: "/damage",  icon: "⚠" },
     ],
   },
   {
@@ -43,49 +43,54 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-/** Derive display initials from an email address. e.g. "matt@x.com" → "MA" */
 function initialsFromEmail(email: string): string {
   const local = email.split("@")[0] ?? "";
   const parts = local.split(/[._-]/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return local.slice(0, 2).toUpperCase();
 }
 
-export default async function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/sign-in");
-  }
+  if (!user) redirect("/sign-in");
 
-  // Placeholder user display — Sprint 2 will replace with workspace membership query
+  // Fetch the user's first active workspace membership
+  const membership = await prisma.workspaceUser.findFirst({
+    where: { userId: user.id, isActive: true },
+    orderBy: { createdAt: "asc" },
+    include: { workspace: { select: { id: true, name: true, slug: true } } },
+  });
+
+  if (!membership) redirect("/onboarding");
+
+  const workspaceCtx = {
+    workspaceId: membership.workspace.id,
+    workspaceName: membership.workspace.name,
+    userRole: membership.role,
+  };
+
   const displayUser = {
     initials: initialsFromEmail(user.email ?? ""),
     name: user.email ?? "User",
-    role: "Member", // TODO Sprint 2: derive from workspace membership
+    role: membership.role.charAt(0).toUpperCase() + membership.role.slice(1),
   };
 
   return (
     <TRPCProvider>
-      <div className="flex h-screen overflow-hidden">
-        <AppSidebar
-          sections={NAV_SECTIONS}
-          user={displayUser}
-          deptLabel="🎬 Lighting Dept"
-        />
-        <main className="flex-1 overflow-hidden flex flex-col bg-grey-light">
-          {children}
-        </main>
-      </div>
+      <WorkspaceProvider value={workspaceCtx}>
+        <div className="flex h-screen overflow-hidden">
+          <AppSidebar
+            sections={NAV_SECTIONS}
+            user={displayUser}
+            deptLabel={membership.workspace.name}
+          />
+          <main className="flex-1 overflow-hidden flex flex-col bg-grey-light">
+            {children}
+          </main>
+        </div>
+      </WorkspaceProvider>
     </TRPCProvider>
   );
 }

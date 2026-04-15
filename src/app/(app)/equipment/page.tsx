@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * Equipment Registry page — Sprint 2
- * Uses Echo's EquipmentListRow, EquipmentTableHead, EquipmentDetailPanel components.
+ * Equipment Registry — wired to live tRPC data.
  *
- * TODO Sprint 2: replace MOCK_EQUIPMENT with trpc.equipment.list.useQuery()
- * TODO Sprint 2: replace detail fetch with trpc.equipment.getById.useQuery()
+ * trpc.equipment.list   → table (search, status filter, pagination)
+ * trpc.equipment.create → add equipment form
+ * trpc.equipment.get    → detail panel (check history, damage history)
+ * trpc.category.list    → category filter dropdown
  */
 
 import { useState, useMemo } from "react";
@@ -13,74 +14,148 @@ import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { EquipmentListRow, EquipmentTableHead } from "@/components/shared/EquipmentListRow";
 import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
-import type { EquipmentItem, EquipmentStatus } from "@/components/shared/EquipmentListRow";
+import { trpc } from "@/lib/trpc/client";
+import { useWorkspace } from "@/lib/workspace-context";
+import type { EquipmentItem } from "@/components/shared/EquipmentListRow";
 import type { EquipmentDetail } from "@/components/shared/EquipmentDetailPanel";
 
-// ── Mock data ──────────────────────────────────────────────────────────────
-
-const MOCK_EQUIPMENT: EquipmentItem[] = [
-  { id: "1", serial: "SP-001", type: "Arri SkyPanel S60-C",   category: "Fixtures",     status: "available",    location: "Lighting Store",       lastActivity: "2h ago" },
-  { id: "2", serial: "SP-002", type: "Arri SkyPanel S60-C",   category: "Fixtures",     status: "checked-out",  location: "Stage 7A — Throne Room", lastActivity: "45m ago" },
-  { id: "3", serial: "AT-001", type: "Astera Titan Tube",     category: "LED",          status: "available",    location: "Lighting Store",       lastActivity: "1d ago" },
-  { id: "4", serial: "AT-002", type: "Astera Titan Tube",     category: "LED",          status: "damaged",      location: "Repairs Bench",        lastActivity: "3h ago" },
-  { id: "5", serial: "CV-001", type: "Creamsource Vortex8",   category: "Fixtures",     status: "checked-out",  location: "Stage 3 — Castle Hall", lastActivity: "2h ago" },
-  { id: "6", serial: "DD-001", type: "Dedolight DLH4",        category: "Tungsten",     status: "available",    location: "Lighting Store",       lastActivity: "5d ago" },
-  { id: "7", serial: "KF-001", type: "Kinoflo Freestyle 21",  category: "Fluorescent",  status: "repaired",     location: "Lighting Store",       lastActivity: "1h ago" },
-  { id: "8", serial: "LA-001", type: "Litepanels Astra 6X",   category: "LED",          status: "available",    location: "Lighting Store",       lastActivity: "3d ago" },
-];
-
-const MOCK_DETAIL: EquipmentDetail = {
-  id: "1",
-  serial: "SP-001",
-  type: "Arri SkyPanel S60-C",
-  category: "Fixtures",
-  status: "available",
-  location: "Lighting Store",
-  notes: "Rigging adapter attached. Handle with care.",
-  addedAt: "2026-01-15T09:00:00Z",
-  checkHistory: [
-    { id: "c1", type: "out", location: "Stage 7A — Throne Room", checkedBy: "Sarah K.", timestamp: "2026-04-13T10:30:00Z" },
-    { id: "c2", type: "in",  checkedBy: "Tom R.", timestamp: "2026-04-13T19:00:00Z" },
-    { id: "c3", type: "out", location: "Stage 3 Main", checkedBy: "James O.", timestamp: "2026-04-10T08:15:00Z" },
-    { id: "c4", type: "in",  checkedBy: "James O.", timestamp: "2026-04-10T20:00:00Z" },
-  ],
-  damageHistory: [],
-};
-
-const STATUS_FILTERS: { label: string; value: EquipmentStatus | "all" }[] = [
-  { label: "All",         value: "all" },
+const STATUS_FILTERS = [
+  { label: "All",         value: "" },
   { label: "Available",   value: "available" },
-  { label: "Checked Out", value: "checked-out" },
+  { label: "Checked Out", value: "checked_out" },
   { label: "Damaged",     value: "damaged" },
-  { label: "Repaired",    value: "repaired" },
-];
+] as const;
 
-// ── Component ──────────────────────────────────────────────────────────────
+type StatusFilter = typeof STATUS_FILTERS[number]["value"];
+
+// ── Map Prisma EquipmentStatus → EquipmentItem status ──────────────────────
+
+function mapStatus(prismaStatus: string): EquipmentItem["status"] {
+  const map: Record<string, EquipmentItem["status"]> = {
+    available:   "available",
+    checked_out: "checked-out",
+    retired:     "available", // fallback
+  };
+  return map[prismaStatus] ?? "available";
+}
+
+function mapDamageStatus(ds: string): EquipmentItem["status"] | null {
+  if (ds === "damaged")      return "damaged";
+  if (ds === "under_repair") return "under-repair";
+  if (ds === "repaired")     return "repaired";
+  return null;
+}
 
 export default function EquipmentPage() {
-  const [search,      setSearch]      = useState("");
-  const [statusFilter, setStatusFilter] = useState<EquipmentStatus | "all">("all");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [detailId,    setDetailId]    = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const { workspaceId } = useWorkspace();
 
-  const filtered = useMemo(() => {
-    return MOCK_EQUIPMENT.filter((item) => {
-      const matchesSearch =
-        !search ||
-        item.serial.toLowerCase().includes(search.toLowerCase()) ||
-        item.type.toLowerCase().includes(search.toLowerCase()) ||
-        item.category.toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [search, statusFilter]);
+  const [search,       setSearch]      = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [selectedIds,  setSelectedIds] = useState<Set<string>>(new Set());
+  const [detailId,     setDetailId]    = useState<string | null>(null);
+  const [showAddForm,  setShowAddForm] = useState(false);
 
-  const detailItem = detailId ? { ...MOCK_DETAIL, id: detailId } : null;
+  // Add form state
+  const [newSerial,   setNewSerial]   = useState("");
+  const [newName,     setNewName]     = useState("");
+  const [newCategory, setNewCategory] = useState("");
+  const [addError,    setAddError]    = useState<string | null>(null);
+
+  // ── Queries ─────────────────────────────────────────────────────────────
+
+  const { data: listData, isLoading, refetch } = trpc.equipment.list.useQuery({
+    workspaceId,
+    search: search || undefined,
+    limit: 100,
+    offset: 0,
+  });
+
+  const { data: detailData } = trpc.equipment.get.useQuery(
+    { workspaceId, equipmentId: detailId! },
+    { enabled: !!detailId }
+  );
+
+  const { data: categories } = trpc.category.list.useQuery({ workspaceId });
+
+  // ── Mutations ────────────────────────────────────────────────────────────
+
+  const createEquipment = trpc.equipment.create.useMutation({
+    onSuccess: () => {
+      void refetch();
+      setShowAddForm(false);
+      setNewSerial("");
+      setNewName("");
+      setNewCategory("");
+      setAddError(null);
+    },
+    onError: (err) => {
+      setAddError(err.message);
+    },
+  });
+
+  // ── Derived data ─────────────────────────────────────────────────────────
+
+  const items: EquipmentItem[] = useMemo(() => {
+    if (!listData?.items) return [];
+    return listData.items.map((eq) => ({
+      id:           eq.id,
+      serial:       eq.serial,
+      type:         eq.name,
+      category:     eq.category?.name ?? "Uncategorised",
+      status:       mapDamageStatus(eq.damageStatus) ?? mapStatus(eq.status),
+      location:     undefined, // TODO: join location once checkEvent.latest is included
+      lastActivity: undefined,
+    }));
+  }, [listData]);
+
+  const detail: EquipmentDetail | null = useMemo(() => {
+    if (!detailData) return null;
+    const eq = detailData;
+    return {
+      id:       eq.id,
+      serial:   eq.serial,
+      type:     eq.name,
+      category: eq.category?.name ?? "Uncategorised",
+      status:   mapDamageStatus(eq.damageStatus) ?? mapStatus(eq.status),
+      notes:    eq.notes ?? undefined,
+      addedAt:  eq.createdAt.toISOString(),
+      checkHistory: eq.checkEvents.map((ce) => ({
+        id:        ce.id,
+        type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
+        location:  ce.set?.name ?? ce.stage?.name ?? ce.studio?.name,
+        checkedBy: ce.user?.email ?? "Unknown",
+        timestamp: ce.createdAt.toISOString(),
+      })),
+      damageHistory: eq.damageReports.map((dr) => ({
+        id:          dr.id,
+        description: dr.description,
+        reportedBy:  dr.reporter?.email ?? "Unknown",
+        timestamp:   dr.reportedAt.toISOString(),
+        // DamageReport has no status field; status lives on Equipment.damageStatus.
+        // Show as "damaged" — repair state is tracked separately via RepairLog.
+        status: "damaged" as const,
+      })),
+    };
+  }, [detailData]);
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
 
   function handleSelectAll(checked: boolean) {
-    setSelectedIds(checked ? new Set(filtered.map((i) => i.id)) : new Set());
+    setSelectedIds(checked ? new Set(items.map((i) => i.id)) : new Set());
   }
+
+  function handleAddSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setAddError(null);
+    createEquipment.mutate({
+      workspaceId,
+      serial:     newSerial.trim(),
+      name:       newName.trim(),
+      categoryId: newCategory || undefined,
+    });
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -98,7 +173,6 @@ export default function EquipmentPage() {
       />
 
       <div className="flex-1 overflow-hidden flex flex-col">
-
         {/* Search + filter bar */}
         <div className="px-6 py-4 bg-white border-b border-grey-mid flex items-center gap-4 flex-wrap">
           <input
@@ -124,63 +198,100 @@ export default function EquipmentPage() {
               </button>
             ))}
           </div>
+          {listData && (
+            <span className="text-[11px] text-grey">
+              {listData.total} item{listData.total !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
 
         {/* Add equipment form */}
         {showAddForm && (
-          <div className="mx-6 mt-4 bg-white rounded-card border border-grey-mid p-5">
+          <form onSubmit={handleAddSubmit} className="mx-6 mt-4 bg-white rounded-card border border-grey-mid p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-[14px] font-semibold text-surface-dark">Add Equipment</h2>
-              <button onClick={() => setShowAddForm(false)} className="text-grey hover:text-surface-dark text-lg">×</button>
+              <button type="button" onClick={() => setShowAddForm(false)} className="text-grey hover:text-surface-dark text-lg">×</button>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              {[
-                { label: "Serial Number", placeholder: "e.g. SP-009" },
-                { label: "Equipment Type", placeholder: "e.g. Arri SkyPanel S60-C" },
-                { label: "Category", placeholder: "e.g. Fixtures" },
-                { label: "Location", placeholder: "e.g. Lighting Store" },
-              ].map((f) => (
-                <div key={f.label}>
-                  <label className="block text-caption text-grey uppercase mb-1.5">{f.label}</label>
-                  <input
-                    type="text"
-                    placeholder={f.placeholder}
-                    className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
-                  />
-                </div>
-              ))}
+              <div>
+                <label className="block text-caption text-grey uppercase mb-1.5">Serial (5 digits)</label>
+                <input
+                  required
+                  pattern="\d{5}"
+                  value={newSerial}
+                  onChange={(e) => setNewSerial(e.target.value)}
+                  placeholder="00001"
+                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-caption text-grey uppercase mb-1.5">Equipment Name</label>
+                <input
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Arri SkyPanel S60-C"
+                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+                />
+              </div>
+              <div>
+                <label className="block text-caption text-grey uppercase mb-1.5">Category</label>
+                <select
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+                >
+                  <option value="">No category</option>
+                  {categories?.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
+            {addError && (
+              <p className="mt-3 text-[12px] text-status-red">{addError}</p>
+            )}
             <div className="flex gap-2 mt-4">
-              {/* TODO Sprint 2: trpc.equipment.create.useMutation() */}
-              <Button variant="primary" size="sm">Save Equipment</Button>
-              <Button variant="secondary" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                size="sm"
+                type="submit"
+                disabled={createEquipment.isPending}
+              >
+                {createEquipment.isPending ? "Saving…" : "Save Equipment"}
+              </Button>
+              <Button variant="secondary" size="sm" type="button" onClick={() => setShowAddForm(false)}>
+                Cancel
+              </Button>
             </div>
-          </div>
+          </form>
         )}
 
         {/* Table */}
         <div className="flex-1 overflow-auto px-6 py-4">
-          {filtered.length === 0 ? (
+          {isLoading ? (
+            <TableSkeleton />
+          ) : items.length === 0 ? (
             <div className="py-16 text-center text-grey text-body">
-              No equipment matches your search.
+              {search ? "No equipment matches your search." : "No equipment yet — add your first item above."}
             </div>
           ) : (
             <div className="bg-white rounded-card border border-grey-mid overflow-hidden shadow-card">
               <table className="w-full">
                 <EquipmentTableHead
-                  allSelected={selectedIds.size === filtered.length && filtered.length > 0}
+                  allSelected={selectedIds.size === items.length && items.length > 0}
                   onSelectAll={handleSelectAll}
                 />
                 <tbody>
-                  {filtered.map((item) => (
+                  {items.map((item) => (
                     <EquipmentListRow
                       key={item.id}
                       item={item}
                       selected={selectedIds.has(item.id)}
-                      onSelect={(_id, checked) =>
+                      onSelect={(id, checked) =>
                         setSelectedIds((prev) => {
                           const next = new Set(prev);
-                          if (checked) { next.add(item.id); } else { next.delete(item.id); }
+                          if (checked) { next.add(id); } else { next.delete(id); }
                           return next;
                         })
                       }
@@ -196,14 +307,30 @@ export default function EquipmentPage() {
 
       {/* Detail drawer */}
       <EquipmentDetailPanel
-        equipment={detailItem}
+        equipment={detail}
         isOpen={!!detailId}
         onClose={() => setDetailId(null)}
         onReportDamage={() => {
           setDetailId(null);
-          // TODO Sprint 2: navigate to damage report form or open modal
+          // TODO: open damage report modal pre-filled with detailId
         }}
       />
     </>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="bg-white rounded-card border border-grey-mid overflow-hidden animate-pulse">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 px-4 py-3 border-b border-grey-mid">
+          <div className="w-4 h-4 bg-grey-mid rounded" />
+          <div className="w-20 h-3 bg-grey-mid rounded" />
+          <div className="flex-1 h-3 bg-grey-mid rounded" />
+          <div className="w-16 h-5 bg-grey-mid rounded-badge" />
+          <div className="w-16 h-5 bg-grey-mid rounded-badge" />
+        </div>
+      ))}
+    </div>
   );
 }
