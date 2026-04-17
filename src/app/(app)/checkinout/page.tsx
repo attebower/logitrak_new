@@ -171,12 +171,12 @@ export default function CheckInOutPage() {
     }
 
     // Mode-specific state warning
-    if (mode === "out" && match.status === "checked_out" && !forceOut) {
+    if (mode === "out" && match.status === "checked_out") {
       addWarning({
         serial,
         kind: "wrong-state",
         message: isManager
-          ? `${serial} is already checked out. Enable force check-out to override.`
+          ? `${serial} is already checked out.`
           : `${serial} is already checked out.`,
       });
       return;
@@ -358,18 +358,7 @@ export default function CheckInOutPage() {
                       {/* Scan warnings */}
                       <ScanWarningList warnings={warnings} onDismiss={(serial) => clearWarning(serial)} />
 
-                      {/* Force checkout toggle (manager+) */}
-                      {isManager && (
-                        <label className="flex items-center gap-2.5 text-[12px] text-grey cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={forceOut}
-                            onChange={(e) => setForceOut(e.target.checked)}
-                            className="w-3.5 h-3.5"
-                          />
-                          Force check-out (override already-checked-out items)
-                        </label>
-                      )}
+                      
 
                       <BatchList
                         items={outBatch}
@@ -436,11 +425,7 @@ export default function CheckInOutPage() {
                             ].filter(Boolean).join(" → ")}
                           </p>
                         </div>
-                        {forceOut && (
-                          <p className="text-[11px] text-status-amber">
-                            ⚠ Force check-out enabled — some items may already be checked out.
-                          </p>
-                        )}
+
                       </div>
 
                       {outError && (
