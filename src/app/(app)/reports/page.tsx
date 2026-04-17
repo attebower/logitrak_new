@@ -67,19 +67,19 @@ const STATUS_COLS: ColumnDef[] = [
   { key: "serial",       label: "Serial",   width: "w-28" },
   { key: "name",         label: "Name",     width: "w-full" },
   { key: "category",     label: "Category", width: "w-40",
-    render: (row) => <span className="text-[11px] text-brand-blue bg-brand-blue-light px-2 py-0.5 rounded-badge whitespace-nowrap">{String(row.category ?? "—")}</span> },
+    render: (row) => <span className="text-[13px] text-grey">{String(row.category ?? "—")}</span> },
   { key: "status",       label: "Status",   width: "w-36",
     render: (row) => {
       const s = String(row.status ?? "");
-      const variant = s === "available" ? "available" : s === "checked_out" ? "checked-out" : "default";
-      return <Badge variant={variant}>{s.replace("_", " ")}</Badge>;
+      const colour = s === "available" ? "text-status-green" : s === "checked_out" ? "text-status-amber" : "text-grey";
+      return <span className={`text-[13px] font-medium ${colour}`}>{s.replace("_", " ")}</span>;
     }},
   { key: "damageStatus", label: "Damage",   width: "w-36",
     render: (row) => {
       const ds = String(row.damageStatus ?? "normal");
-      if (ds === "normal") return <span className="text-[11px] text-grey">—</span>;
-      const variant = ds === "damaged" ? "damaged" : ds === "under_repair" ? "under-repair" : "repaired";
-      return <Badge variant={variant}>{ds.replace("_", " ")}</Badge>;
+      if (ds === "normal") return <span className="text-[13px] text-grey">—</span>;
+      const colour = ds === "damaged" ? "text-status-red" : ds === "under_repair" ? "text-status-amber" : "text-status-teal";
+      return <span className={`text-[13px] font-medium ${colour}`}>{ds.replace("_", " ")}</span>;
     }},
 ];
 
