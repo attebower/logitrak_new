@@ -246,13 +246,13 @@ export default function OnboardingPage() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Your role within the department
+                    Sub-department
                   </label>
                   <input
                     type="text"
                     value={subDepartment}
                     onChange={(e) => setSubDepartment(e.target.value)}
-                    placeholder="e.g. Rigging Gaffer, Focus Puller"
+                    placeholder="e.g. Rigging, Electrics, Camera Trainee"
                     className={inputCls}
                   />
                 </div>
