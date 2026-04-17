@@ -75,6 +75,7 @@ export default function CheckInOutPage() {
   // Scan state
   const [warnings,    setWarnings]    = useState<ScanWarning[]>([]);
   const [scanSearch,  setScanSearch]  = useState("");
+  const utils = trpc.useUtils();
 
   // ── Live data ─────────────────────────────────────────────────────────
 
@@ -313,7 +314,25 @@ export default function CheckInOutPage() {
                           type="search"
                           placeholder="Or search by name / serial…"
                           value={scanSearch}
-                          onChange={(e) => { const v = e.target.value; setScanSearch(v); if (/^[0-9]{5}$/.test(v.trim())) { handleScan(v.trim()); setScanSearch(""); } }}
+                          onChange={async (e) => {
+                          const v = e.target.value;
+                          setScanSearch(v);
+                          if (/^[0-9]{5}$/.test(v.trim())) {
+                            const serial = v.trim();
+                            setScanSearch("");
+                            try {
+                              const result = await utils.equipment.list.fetch({ workspaceId, search: serial, limit: 1 });
+                              const match = result?.items?.find((i: { serial: string }) => i.serial === serial);
+                              if (match) {
+                                handleScan(serial);
+                              } else {
+                                addWarning({ serial, kind: "unknown", message: `${serial} not found.` });
+                              }
+                            } catch {
+                              handleScan(serial);
+                            }
+                          }
+                        }}
                           className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
                         />
                         {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
@@ -464,7 +483,25 @@ export default function CheckInOutPage() {
                           type="search"
                           placeholder="Or search by name / serial…"
                           value={scanSearch}
-                          onChange={(e) => { const v = e.target.value; setScanSearch(v); if (/^[0-9]{5}$/.test(v.trim())) { handleScan(v.trim()); setScanSearch(""); } }}
+                          onChange={async (e) => {
+                          const v = e.target.value;
+                          setScanSearch(v);
+                          if (/^[0-9]{5}$/.test(v.trim())) {
+                            const serial = v.trim();
+                            setScanSearch("");
+                            try {
+                              const result = await utils.equipment.list.fetch({ workspaceId, search: serial, limit: 1 });
+                              const match = result?.items?.find((i: { serial: string }) => i.serial === serial);
+                              if (match) {
+                                handleScan(serial);
+                              } else {
+                                addWarning({ serial, kind: "unknown", message: `${serial} not found.` });
+                              }
+                            } catch {
+                              handleScan(serial);
+                            }
+                          }
+                        }}
                           className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
                         />
                         {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
