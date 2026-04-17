@@ -127,9 +127,13 @@ const UK_STUDIO_NAMES = Object.keys(UK_STUDIOS_REFERENCE).sort();
 
 export default function LocationsPage() {
   const { workspaceId } = useWorkspace();
+  console.log('[LocationsPage] workspaceId:', workspaceId);
 
   // Studios query
-  const studiosQuery = trpc.location.studio.list.useQuery({ workspaceId });
+  const studiosQuery = trpc.location.studio.list.useQuery(
+    { workspaceId },
+    { enabled: !!workspaceId }
+  );
   const utils = trpc.useUtils();
 
   // Selected studio
@@ -138,10 +142,8 @@ export default function LocationsPage() {
   // Add studio
   const [showAddStudio, setShowAddStudio] = useState(false);
   const [newStudioName, setNewStudioName] = useState("");
-  const [newStudioLocation, setNewStudioLocation] = useState("");
-  const [studioRef, setStudioRef] = useState("");
   const createStudio = trpc.admin.location.studio.create.useMutation({
-    onSuccess: () => { utils.location.studio.list.invalidate(); setShowAddStudio(false); setNewStudioName(""); setNewStudioLocation(""); setStudioRef(""); },
+    onSuccess: () => { utils.location.studio.list.invalidate(); setShowAddStudio(false); setNewStudioName(""); },
   });
 
   // Edit studio
@@ -181,13 +183,6 @@ export default function LocationsPage() {
   const selectedStudio = studios.find((s) => s.id === selectedStudioId);
   const stages = stagesQuery.data ?? [];
 
-  // When a UK reference studio is picked, pre-fill the name + location
-  function handleRefSelect(refName: string) {
-    setStudioRef(refName);
-    setNewStudioName(refName);
-    setNewStudioLocation(UK_STUDIOS_REFERENCE[refName]?.location ?? "");
-  }
-
   const inp = "w-full border border-grey-mid rounded-lg px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue";
 
   return (
@@ -209,28 +204,17 @@ export default function LocationsPage() {
 
         {/* Add studio panel */}
         {showAddStudio && (
-          <div className="border-b border-grey-mid p-4 bg-blue-50/50 space-y-3">
+          <div className="border-b border-grey-mid p-4 bg-grey-light space-y-3">
             <p className="text-[12px] font-semibold text-surface-dark">Add Studio</p>
-
-            {/* UK reference picker */}
-            <div>
-              <label className="block text-[11px] text-grey mb-1">Start from UK reference</label>
-              <select value={studioRef} onChange={(e) => handleRefSelect(e.target.value)}
-                className={inp + " text-[12px]"}>
-                <option value="">Pick a UK studio…</option>
-                {UK_STUDIO_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-
             <div>
               <label className="block text-[11px] text-grey mb-1">Studio name *</label>
               <input value={newStudioName} onChange={(e) => setNewStudioName(e.target.value)}
-                placeholder="e.g. Pinewood Studios" className={inp + " text-[12px]"} />
-            </div>
-            <div>
-              <label className="block text-[11px] text-grey mb-1">Location</label>
-              <input value={newStudioLocation} onChange={(e) => setNewStudioLocation(e.target.value)}
-                placeholder="e.g. Iver Heath, Buckinghamshire" className={inp + " text-[12px]"} />
+                placeholder="e.g. Shepperton Studios" className={inp + " text-[12px]"}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newStudioName.trim()) createStudio.mutate({ workspaceId, name: newStudioName.trim(), displayId: newStudioName.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") });
+                  if (e.key === "Escape") { setShowAddStudio(false); setNewStudioName(""); }
+                }} />
             </div>
             <div className="flex gap-2">
               <Button variant="primary" size="sm"
@@ -238,7 +222,7 @@ export default function LocationsPage() {
                 onClick={() => createStudio.mutate({ workspaceId, name: newStudioName.trim(), displayId: newStudioName.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") })}>
                 {createStudio.isPending ? "Adding…" : "Add"}
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => { setShowAddStudio(false); setStudioRef(""); setNewStudioName(""); setNewStudioLocation(""); }}>
+              <Button variant="secondary" size="sm" onClick={() => { setShowAddStudio(false); setNewStudioName(""); }}>
                 Cancel
               </Button>
             </div>
@@ -323,29 +307,6 @@ export default function LocationsPage() {
                 <Plus size={14} className="mr-1" /> Add Stage
               </Button>
             </div>
-
-            {/* UK reference sections hint */}
-            {studioRef && UK_STUDIOS_REFERENCE[studioRef] && stages.length === 0 && (
-              <div className="mx-6 mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-                <p className="text-[12px] font-semibold text-brand-blue mb-2">
-                  Import stages from {studioRef}?
-                </p>
-                <p className="text-[11px] text-grey mb-3">
-                  This studio has {UK_STUDIOS_REFERENCE[studioRef].sections.reduce((acc, s) => acc + s.stages.length, 0)} known stages across {UK_STUDIOS_REFERENCE[studioRef].sections.length} section{UK_STUDIOS_REFERENCE[studioRef].sections.length !== 1 ? "s" : ""}.
-                </p>
-                <Button variant="primary" size="sm"
-                  onClick={async () => {
-                    for (const section of UK_STUDIOS_REFERENCE[studioRef].sections) {
-                      for (const stageName of section.stages) {
-                        await createStage.mutateAsync({ workspaceId, studioId: selectedStudioId!, name: stageName });
-                      }
-                    }
-                    utils.location.stage.list.invalidate();
-                  }}>
-                  Import all stages
-                </Button>
-              </div>
-            )}
 
             {/* Add stage inline */}
             {showAddStage && (

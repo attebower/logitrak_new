@@ -60,7 +60,8 @@ const enforceWorkspaceMember = t.middleware(async (opts) => {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
-  const parsed = z.object({ workspaceId: z.string() }).safeParse((opts as { input: unknown }).input);
+  const rawInput = await opts.getRawInput();
+  const parsed = z.object({ workspaceId: z.string() }).safeParse(rawInput);
   if (!parsed.success) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "workspaceId is required" });
   }
