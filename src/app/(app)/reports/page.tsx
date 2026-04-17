@@ -64,17 +64,17 @@ function relTime(d: Date | string | null | undefined): string {
 // ── Column definitions ────────────────────────────────────────────────────
 
 const STATUS_COLS: ColumnDef[] = [
-  { key: "serial",       label: "Serial",   width: "w-24" },
+  { key: "serial",       label: "Serial",   width: "w-28" },
   { key: "name",         label: "Name",     width: "w-full" },
-  { key: "category",     label: "Category", width: "w-32",
-    render: (row) => <span className="text-[11px] text-brand-blue bg-brand-blue-light px-2 py-0.5 rounded-badge">{String(row.category ?? "—")}</span> },
-  { key: "status",       label: "Status",   width: "w-32",
+  { key: "category",     label: "Category", width: "w-40",
+    render: (row) => <span className="text-[11px] text-brand-blue bg-brand-blue-light px-2 py-0.5 rounded-badge whitespace-nowrap">{String(row.category ?? "—")}</span> },
+  { key: "status",       label: "Status",   width: "w-36",
     render: (row) => {
       const s = String(row.status ?? "");
       const variant = s === "available" ? "available" : s === "checked_out" ? "checked-out" : "default";
       return <Badge variant={variant}>{s.replace("_", " ")}</Badge>;
     }},
-  { key: "damageStatus", label: "Damage",   width: "w-32",
+  { key: "damageStatus", label: "Damage",   width: "w-36",
     render: (row) => {
       const ds = String(row.damageStatus ?? "normal");
       if (ds === "normal") return <span className="text-[11px] text-grey">—</span>;

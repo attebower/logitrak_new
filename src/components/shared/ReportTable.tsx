@@ -108,14 +108,14 @@ export function ReportTable<T extends Record<string, unknown>>({
 
       {/* ── Table ── */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
+        <table className="w-full border-collapse table-fixed">
           <thead>
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.key}
                   className={cn(
-                    "bg-grey-light px-4 py-3 text-left border-b border-grey-mid",
+                    "bg-grey-light px-4 py-3 text-left border-b border-grey-mid whitespace-nowrap",
                     "text-[11px] text-grey uppercase tracking-wider font-semibold",
                     col.sortable !== false && "cursor-pointer select-none hover:text-surface-dark",
                     col.width,
@@ -163,6 +163,7 @@ export function ReportTable<T extends Record<string, unknown>>({
                         key={col.key}
                         className={cn(
                           "px-4 py-3 text-[13px] text-surface-dark",
+                          col.key !== "name" && col.key !== "description" && col.key !== "location" && "whitespace-nowrap",
                           col.align === "right" && "text-right",
                           col.align === "center" && "text-center"
                         )}
