@@ -34,7 +34,8 @@ export async function middleware(request: NextRequest) {
                       pathname.startsWith("/auth");
   const isPublicRoute = pathname === "/" ||
                         pathname.startsWith("/pricing") ||
-                        pathname.startsWith("/about");
+                        pathname.startsWith("/about") ||
+                        pathname.startsWith("/preview-onboarding");
 
   if (!user && !isAuthRoute && !isPublicRoute) {
     return NextResponse.redirect(new URL("/sign-in", request.url));

@@ -89,16 +89,16 @@ model Workspace {
 }
 
 model UserProfile {
-  id            String   @id // matches auth.users.id from Supabase
-  email         String   @unique
-  displayName   String?
-  fullName      String?
-  nickname      String?
-  department    String?  // e.g. "Lighting", "Props", "Camera"
-  subDepartment String?  // free text e.g. "Rigging Gaffer"
-  avatarUrl     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id // matches auth.users.id from Supabase
+  email          String   @unique
+  displayName    String?
+  fullName       String?
+  nickname       String?
+  department     String?  // e.g. "Lighting", "Props", "Camera"
+  subDepartment  String?  // free text e.g. "Rigging Gaffer"
+  avatarUrl      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   workspaceMemberships WorkspaceUser[]
   sentInvitations      WorkspaceInvitation[]
@@ -168,6 +168,9 @@ model Equipment {
   serial       String
   name         String
   categoryId   String?
+  // Sprint 3: kit/container tracking (see SCHEMA_DECISIONS.md #16)
+  // parentId is null for standalone items; set to a parent equipment id for kit members
+  parentId     String?
   status       EquipmentStatus @default(available)
   damageStatus DamageStatus    @default(normal)
   notes        String?
@@ -177,11 +180,16 @@ model Equipment {
 
   workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   category      EquipmentCategory? @relation(fields: [categoryId], references: [id])
+  parent        Equipment?         @relation("EquipmentKits", fields: [parentId], references: [id])
+  children      Equipment[]        @relation("EquipmentKits")
   checkEvents   CheckEvent[]
   damageReports DamageReport[]
   repairLogs    RepairLog[]
 
   @@unique([workspaceId, serial])
+  @@index([workspaceId, status])
+  @@index([workspaceId, damageStatus])
+  @@index([workspaceId, categoryId])
   @@map("equipment")
 }
 
@@ -257,6 +265,7 @@ model CheckEvent {
 
   @@index([workspaceId, createdAt(sort: Desc)])
   @@index([equipmentId, createdAt(sort: Desc)])
+  @@index([workspaceId, productionName, eventType])
   @@map("check_events")
 }
 
@@ -321,6 +330,7 @@ model DamageReport {
   reporter   UserProfile  @relation(fields: [reporterId], references: [id])
   repairLogs RepairLog[]
 
+  @@index([workspaceId, reportedAt(sort: Desc)])
   @@map("damage_reports")
 }
 
