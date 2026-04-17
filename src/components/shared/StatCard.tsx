@@ -39,8 +39,8 @@ export type StatCardChangeColor = keyof typeof changeColorMap;
 export interface StatCardProps {
   /** Top border accent colour */
   color: StatCardColor;
-  /** Emoji or icon rendered ghost top-right */
-  icon?: string;
+  /** Icon rendered ghost top-right */
+  icon?: React.ReactNode;
   /** Uppercase label — e.g. "Total Assets" */
   label: string;
   /** Large number value */
@@ -75,7 +75,7 @@ export function StatCard({
       {/* Ghost icon — top-right */}
       {icon && (
         <span
-          className="absolute top-4 right-4 text-[22px] opacity-20 select-none"
+          className="absolute top-4 right-4 opacity-20 select-none"
           aria-hidden
         >
           {icon}

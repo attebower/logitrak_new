@@ -15,16 +15,21 @@ import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { BadgeProps } from "@/components/ui/badge";
+import {
+  LayoutDashboard, CheckCircle2, ArrowLeftRight, AlertTriangle,
+  RotateCcw, Plus, List, Wrench,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 // ── Quick actions (static — no data dependency) ────────────────────────────
 
-const QUICK_ACTIONS = [
-  { label: "Check Out",      icon: "⇄",  desc: "Sign out items to crew",  href: "/checkinout" },
-  { label: "Check In",       icon: "↩",  desc: "Return items to stock",   href: "/checkinout" },
-  { label: "Report Damage",  icon: "⚠",  desc: "Log a damaged item",      href: "/damage" },
-  { label: "Add Equipment",  icon: "+",  desc: "Register new assets",     href: "/equipment" },
-  { label: "Equipment List", icon: "≡",  desc: "Browse all assets",       href: "/equipment" },
-  { label: "Repair Log",     icon: "🔧", desc: "View repair history",     href: "/damage/repair" },
+const QUICK_ACTIONS: Array<{ label: string; icon: LucideIcon; desc: string; href: string }> = [
+  { label: "Check Out",      icon: ArrowLeftRight, desc: "Sign out items to crew",  href: "/checkinout" },
+  { label: "Check In",       icon: RotateCcw,      desc: "Return items to stock",   href: "/checkinout" },
+  { label: "Report Damage",  icon: AlertTriangle,  desc: "Log a damaged item",      href: "/damage" },
+  { label: "Add Equipment",  icon: Plus,           desc: "Register new assets",     href: "/equipment" },
+  { label: "Equipment List", icon: List,           desc: "Browse all assets",       href: "/equipment" },
+  { label: "Repair Log",     icon: Wrench,         desc: "View repair history",     href: "/damage/repair" },
 ];
 
 // ── Activity event → display label ────────────────────────────────────────
@@ -80,7 +85,7 @@ export default function DashboardPage() {
     <>
       <AppTopbar
         title="Dashboard"
-        context={`🎬 ${workspaceName}`}
+        context={workspaceName}
         actions={
           <>
             <Button variant="secondary" size="sm">Export</Button>
@@ -96,13 +101,13 @@ export default function DashboardPage() {
         <StatGrid>
           <StatCard
             color="blue"
-            icon="⊞"
+            icon={<LayoutDashboard className="h-5 w-5" />}
             label="Total Assets"
             value={statsLoading ? "—" : (stats?.totalEquipment ?? 0)}
           />
           <StatCard
             color="green"
-            icon="✓"
+            icon={<CheckCircle2 className="h-5 w-5" />}
             label="Available"
             value={statsLoading ? "—" : (stats?.available ?? 0)}
             change={
@@ -114,13 +119,13 @@ export default function DashboardPage() {
           />
           <StatCard
             color="amber"
-            icon="⇄"
+            icon={<ArrowLeftRight className="h-5 w-5" />}
             label="Checked Out"
             value={statsLoading ? "—" : (stats?.checkedOut ?? 0)}
           />
           <StatCard
             color="red"
-            icon="⚠"
+            icon={<AlertTriangle className="h-5 w-5" />}
             label="Damaged"
             value={statsLoading ? "—" : (stats?.damaged ?? 0)}
             changeColor="red"
@@ -145,7 +150,7 @@ export default function DashboardPage() {
                 <div className="divide-y divide-grey-mid">
                   {activity.map((event) => (
                     <div key={event.id} className="flex items-center gap-3 px-5 py-3">
-                      <div className="text-[11px] text-grey w-14 flex-shrink-0">
+                      <div className="text-[11px] text-grey w-14 flex-shrink-0 text-right">
                         {relativeTime(event.createdAt)}
                       </div>
                       <div className="flex-1 text-[13px] text-surface-dark">
@@ -171,14 +176,16 @@ export default function DashboardPage() {
               <div className="px-5 py-4 border-b border-grey-mid">
                 <h2 className="text-[14px] font-semibold text-surface-dark">Quick Actions</h2>
               </div>
-              <div className="grid grid-cols-2 gap-px bg-grey-mid">
+              <div className="grid grid-cols-2 gap-3 p-4">
                 {QUICK_ACTIONS.map((action) => (
                   <Link
                     key={action.label}
                     href={action.href}
-                    className="bg-white hover:bg-grey-light transition-colors p-4 text-left group"
+                    className="rounded-[10px] border border-grey-mid hover:border-brand-blue/20 hover:bg-brand-blue/[0.03] transition-colors p-4 text-left group"
                   >
-                    <div className="text-2xl mb-1.5">{action.icon}</div>
+                    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-[10px] bg-grey-light group-hover:bg-brand-blue/10 transition-colors">
+                      <action.icon className="h-[18px] w-[18px] text-grey group-hover:text-brand-blue transition-colors" />
+                    </div>
                     <div className="text-[12px] font-semibold text-surface-dark group-hover:text-brand-blue transition-colors">
                       {action.label}
                     </div>

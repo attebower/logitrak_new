@@ -42,7 +42,10 @@ export function AppTopbar({
       {/* Right: optional context + actions */}
       <div className="flex items-center gap-2.5">
         {context && (
-          <span className="text-[11px] text-grey hidden sm:block">{context}</span>
+          <div className="hidden sm:flex items-center gap-2">
+            <span className="text-grey-mid text-[16px] font-light">/</span>
+            <span className="text-[11px] text-grey">{context}</span>
+          </div>
         )}
         {actions}
       </div>

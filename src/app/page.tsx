@@ -23,48 +23,48 @@ const features = [
     title: "Scan in under 10 seconds",
     description:
       "Check out 50 items in under 5 minutes. Batch scan an entire truck before the morning call. Audio confirmation on every scan — no second-guessing.",
-    color: "text-[#1B4FD8]",
-    bg: "bg-[#1B4FD8]/10",
+    color: "text-brand-blue",
+    bg: "bg-brand-blue/10",
   },
   {
     icon: MapPin,
     title: "Know exactly where it is",
     description:
       "Studio → Stage → Set → Position. Every item tracked to exactly where it was left. No more radio calls asking which stage the Technocrane is on.",
-    color: "text-[#0D9488]",
-    bg: "bg-[#0D9488]/10",
+    color: "text-status-teal",
+    bg: "bg-status-teal/10",
   },
   {
     icon: FileWarning,
     title: "Full damage history",
     description:
       "Every scratch, every repair, every production — logged and searchable. Know exactly what happened to item #00432 three shoots ago, without digging through a spreadsheet.",
-    color: "text-[#D97706]",
-    bg: "bg-[#D97706]/10",
+    color: "text-status-amber",
+    bg: "bg-status-amber/10",
   },
   {
     icon: BarChart3,
     title: "Wrap-day reports in one tap",
     description:
       "Close production day in two minutes — not an afternoon. Available, checked out, damaged, by location. Export to CSV or PDF for your production coordinator. Done.",
-    color: "text-[#16A34A]",
-    bg: "bg-[#16A34A]/10",
+    color: "text-status-green",
+    bg: "bg-status-green/10",
   },
   {
     icon: Camera,
     title: "Set Snapshots",
     description:
       "Freeze the exact state of a set at any moment. Come back to it months later. Invaluable for continuity and reconciliation.",
-    color: "text-[#1B4FD8]",
-    bg: "bg-[#1B4FD8]/10",
+    color: "text-brand-blue",
+    bg: "bg-brand-blue/10",
   },
   {
     icon: Users,
     title: "Every crew member, the right access",
     description:
       "Five role levels from Owner to Read-Only. Your HOD has full control. Your dailies see only what they need — and can't accidentally delete anything.",
-    color: "text-[#0D9488]",
-    bg: "bg-[#0D9488]/10",
+    color: "text-status-teal",
+    bg: "bg-status-teal/10",
   },
 ];
 
@@ -589,7 +589,7 @@ export default function HomePage() {
                 {/* Badge */}
                 {plan.badge && (
                   <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                    <span className="rounded-full bg-[#1B4FD8] px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-[0_0_20px_rgba(27,79,216,0.5)]">
+                    <span className="rounded-full bg-brand-blue px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-[0_0_20px_rgba(27,79,216,0.5)]">
                       {plan.badge}
                     </span>
                   </div>

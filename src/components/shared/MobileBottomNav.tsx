@@ -20,34 +20,38 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import {
+  LayoutDashboard, ArrowLeftRight, List, AlertTriangle,
+  FileText, Users, Building2, Settings, MoreHorizontal,
+} from "lucide-react";
 
 // ── Nav definitions ───────────────────────────────────────────────────────
 
 interface PrimaryTab {
   label:  string;
   href:   string;
-  icon:   string;
+  icon:   React.ReactNode;
   badge?: number;
 }
 
 interface SheetItem {
   label: string;
   href:  string;
-  icon:  string;
+  icon:  React.ReactNode;
 }
 
 const PRIMARY_TABS: PrimaryTab[] = [
-  { label: "Dashboard",    href: "/dashboard",  icon: "⊞" },
-  { label: "Check In/Out", href: "/checkinout", icon: "⇄" },
-  { label: "Equipment",    href: "/equipment",  icon: "≡" },
-  { label: "Damage",       href: "/damage",     icon: "⚠" },
+  { label: "Dashboard",    href: "/dashboard",  icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
+  { label: "Check In/Out", href: "/checkinout", icon: <ArrowLeftRight className="h-[18px] w-[18px]" /> },
+  { label: "Equipment",    href: "/equipment",  icon: <List className="h-[18px] w-[18px]" /> },
+  { label: "Damage",       href: "/damage",     icon: <AlertTriangle className="h-[18px] w-[18px]" /> },
 ];
 
 const SHEET_ITEMS: SheetItem[] = [
-  { label: "Reports",   href: "/reports",   icon: "📋" },
-  { label: "Team",      href: "/team",      icon: "👥" },
-  { label: "Locations", href: "/locations", icon: "🏢" },
-  { label: "Settings",  href: "/settings",  icon: "⚙" },
+  { label: "Reports",   href: "/reports",   icon: <FileText className="h-[20px] w-[20px]" /> },
+  { label: "Team",      href: "/team",      icon: <Users className="h-[20px] w-[20px]" /> },
+  { label: "Locations", href: "/locations", icon: <Building2 className="h-[20px] w-[20px]" /> },
+  { label: "Settings",  href: "/settings",  icon: <Settings className="h-[20px] w-[20px]" /> },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -104,10 +108,7 @@ export function MobileBottomNav({
               >
                 <div className="relative">
                   <span
-                    className={cn(
-                      "text-[18px] leading-none",
-                      isActive ? "text-brand-blue" : "text-grey"
-                    )}
+                    className={cn(isActive ? "text-brand-blue" : "text-grey")}
                     aria-hidden
                   >
                     {tab.icon}
@@ -138,15 +139,10 @@ export function MobileBottomNav({
             aria-controls="more-sheet"
             aria-label="More navigation options"
           >
-            <span
-              className={cn(
-                "text-[18px] leading-none",
-                (sheetOpen || sheetActive) ? "text-brand-blue" : "text-grey"
-              )}
+            <MoreHorizontal
+              className={cn("h-[18px] w-[18px]", (sheetOpen || sheetActive) ? "text-brand-blue" : "text-grey")}
               aria-hidden
-            >
-              ⋯
-            </span>
+            />
             <span
               className={cn(
                 "text-[9px] mt-1 font-medium tracking-tight",
@@ -206,7 +202,7 @@ export function MobileBottomNav({
                 )}
                 aria-current={isActive ? "page" : undefined}
               >
-                <span className="text-[20px] leading-none w-7 text-center" aria-hidden>
+                <span className="w-7 flex items-center justify-center" aria-hidden>
                   {item.icon}
                 </span>
                 <span className="text-[15px] font-medium">{item.label}</span>

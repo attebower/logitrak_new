@@ -17,29 +17,33 @@ import { TRPCProvider } from "@/lib/trpc/provider";
 import { WorkspaceProvider } from "@/lib/workspace-context";
 import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 import type { NavSection } from "@/components/shared/AppSidebar";
+import {
+  LayoutDashboard, ArrowLeftRight, List,
+  FileText, AlertTriangle, Building2, Users, Settings,
+} from "lucide-react";
 
 const NAV_SECTIONS: NavSection[] = [
   {
     label: "Main",
     items: [
-      { label: "Dashboard",    href: "/dashboard",  icon: "⊞" },
-      { label: "Check In/Out", href: "/checkinout", icon: "⇄" },
-      { label: "Equipment",    href: "/equipment",  icon: "≡" },
+      { label: "Dashboard",    href: "/dashboard",  icon: <LayoutDashboard className="h-4 w-4" /> },
+      { label: "Check In/Out", href: "/checkinout", icon: <ArrowLeftRight className="h-4 w-4" /> },
+      { label: "Equipment",    href: "/equipment",  icon: <List className="h-4 w-4" /> },
     ],
   },
   {
     label: "Monitor",
     items: [
-      { label: "Reports", href: "/reports", icon: "📋" },
-      { label: "Damage",  href: "/damage",  icon: "⚠" },
+      { label: "Reports", href: "/reports", icon: <FileText className="h-4 w-4" /> },
+      { label: "Damage",  href: "/damage",  icon: <AlertTriangle className="h-4 w-4" /> },
     ],
   },
   {
     label: "Manage",
     items: [
-      { label: "Locations", href: "/locations", icon: "🏢" },
-      { label: "Team",      href: "/team",      icon: "👥" },
-      { label: "Settings",  href: "/settings",  icon: "⚙" },
+      { label: "Locations", href: "/locations", icon: <Building2 className="h-4 w-4" /> },
+      { label: "Team",      href: "/team",      icon: <Users className="h-4 w-4" /> },
+      { label: "Settings",  href: "/settings",  icon: <Settings className="h-4 w-4" /> },
     ],
   },
 ];
