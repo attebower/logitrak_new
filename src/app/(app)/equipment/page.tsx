@@ -120,6 +120,10 @@ export default function EquipmentPage() {
   const detail: EquipmentDetail | null = useMemo(() => {
     if (!detailData) return null;
     const eq = detailData;
+    const lastOut = eq.checkEvents.find((ce) => ce.eventType === "check_out");
+    const currentLocation = lastOut
+      ? [lastOut.studio?.name, lastOut.stage?.name, lastOut.set?.name, lastOut.positionType, lastOut.exactLocationDescription].filter(Boolean).join(" → ")
+      : undefined;
     return {
       id:       eq.id,
       serial:   eq.serial,
@@ -127,22 +131,24 @@ export default function EquipmentPage() {
       category: eq.category?.name ?? "Uncategorised",
       status:   mapDamageStatus(eq.damageStatus) ?? mapStatus(eq.status),
       notes:    eq.notes ?? undefined,
+      location: currentLocation,
       addedAt:  eq.createdAt.toISOString(),
       checkHistory: eq.checkEvents.map((ce) => ({
         id:        ce.id,
         type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
-        location:  ce.set?.name ?? ce.stage?.name ?? ce.studio?.name,
-        checkedBy: ce.user?.email ?? "Unknown",
-        timestamp: ce.createdAt.toISOString(),
+        location:  [ce.studio?.name, ce.stage?.name, ce.set?.name, ce.positionType, ce.exactLocationDescription].filter(Boolean).join(" → "),
+        checkedBy: ce.user?.displayName ?? ce.user?.email ?? "Unknown",
+        timestamp: new Date(ce.createdAt).toISOString(),
       })),
       damageHistory: eq.damageReports.map((dr) => ({
         id:          dr.id,
-        description: dr.description,
-        reportedBy:  dr.reporter?.email ?? "Unknown",
-        timestamp:   dr.reportedAt.toISOString(),
-        // DamageReport has no status field; status lives on Equipment.damageStatus.
-        // Show as "damaged" — repair state is tracked separately via RepairLog.
-        status: "damaged" as const,
+        description: dr.description ?? "",
+        reportedBy:  dr.reporter?.displayName ?? dr.reporter?.email ?? "Unknown",
+        timestamp:   new Date(dr.reportedAt).toISOString(),
+        status:      "damaged" as const,
+        resolution:  dr.repairLogs?.[0]?.description,
+        repairedBy:  dr.repairLogs?.[0]?.repairedByName,
+        repairedAt:  dr.repairLogs?.[0]?.repairedAt ? new Date(dr.repairLogs[0].repairedAt).toISOString() : undefined,
       })),
     };
   }, [detailData]);

@@ -277,15 +277,23 @@ export default function ReportsPage() {
     const eq = detailData;
     const mapStatus = (s: string) => s === "available" ? "available" : s === "checked_out" ? "checked-out" : "retired";
     const mapDmg = (d: string) => d === "damaged" ? "damaged" : d === "under_repair" ? "damaged" : d === "repaired" ? "available" : null;
-    return {
+    // Find the most recent check-out event for current location
+      type CEType = {id:string;eventType:string;createdAt:string;user?:{displayName?:string;email?:string};studio?:{name?:string};stage?:{name?:string};set?:{name?:string};positionType?:string;exactLocationDescription?:string;};
+      const events = eq.checkEvents as unknown as CEType[];
+      const lastOut = events.find((e) => e.eventType === "check_out");
+      const currentLocation = lastOut
+        ? [lastOut.studio?.name, lastOut.stage?.name, lastOut.set?.name, lastOut.positionType, lastOut.exactLocationDescription].filter(Boolean).join(" → ")
+        : undefined;
+      return {
       id:       eq.id,
       serial:   eq.serial,
       type:     eq.name,
       category: (eq.category as {name?: string} | null)?.name ?? "Uncategorised",
       status:   (mapDmg(eq.damageStatus) ?? mapStatus(eq.status)) as EquipmentDetail["status"],
       notes:    (eq.notes as string | null) ?? undefined,
+      location: currentLocation,
       addedAt:  new Date(eq.createdAt).toISOString(),
-      checkHistory: (eq.checkEvents as unknown as {id:string;eventType:string;createdAt:string;user?:{displayName?:string;email?:string};studio?:{name?:string};stage?:{name?:string};set?:{name?:string};}[]).map((ce) => ({
+      checkHistory: events.map((ce) => ({
         id:        ce.id,
         type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
         location:  [ce.studio?.name, ce.stage?.name, ce.set?.name].filter(Boolean).join(" → "),
