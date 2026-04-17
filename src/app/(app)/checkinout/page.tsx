@@ -175,9 +175,7 @@ export default function CheckInOutPage() {
       addWarning({
         serial,
         kind: "wrong-state",
-        message: isManager
-          ? `${serial} is already checked out.`
-          : `${serial} is already checked out.`,
+        message: `${serial} is already checked out.`,
       });
       return;
     }
