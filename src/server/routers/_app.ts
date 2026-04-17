@@ -11,8 +11,10 @@ import { reportsRouter } from "./reports";
 import { teamRouter } from "./team";
 import { adminRouter } from "./admin";
 import { billingRouter } from "./billing";
+import { userRouter } from "./user";
 
 export const appRouter = router({
+  user: userRouter,
   workspace: workspaceRouter,
   equipment: equipmentRouter,
   dashboard: dashboardRouter,

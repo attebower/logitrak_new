@@ -89,12 +89,16 @@ model Workspace {
 }
 
 model UserProfile {
-  id          String   @id // matches auth.users.id from Supabase
-  email       String   @unique
-  displayName String?
-  avatarUrl   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id // matches auth.users.id from Supabase
+  email         String   @unique
+  displayName   String?
+  fullName      String?
+  nickname      String?
+  department    String?  // e.g. "Lighting", "Props", "Camera"
+  subDepartment String?  // free text e.g. "Rigging Gaffer"
+  avatarUrl     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   workspaceMemberships WorkspaceUser[]
   sentInvitations      WorkspaceInvitation[]
@@ -132,6 +136,7 @@ model WorkspaceInvitation {
   role        WorkspaceRole @default(operator)
   invitedById String
   token       String        @unique @default(cuid())
+  nickname    String?       // carried through to UserProfile on acceptance
   expiresAt   DateTime
   acceptedAt  DateTime?
   createdAt   DateTime      @default(now())

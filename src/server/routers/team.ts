@@ -39,6 +39,7 @@ export const teamRouter = router({
         workspaceId: z.string(),
         email: z.string().email(),
         role: z.nativeEnum(WorkspaceRole).default("operator"),
+        nickname: z.string().max(50).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -80,7 +81,12 @@ export const teamRouter = router({
       if (existing) {
         return ctx.prisma.workspaceInvitation.update({
           where: { id: existing.id },
-          data: { role: input.role, expiresAt, invitedById: ctx.session!.user.id },
+          data: {
+            role: input.role,
+            expiresAt,
+            invitedById: ctx.session!.user.id,
+            ...(input.nickname ? { nickname: input.nickname } : {}),
+          },
         });
       }
 
@@ -95,6 +101,7 @@ export const teamRouter = router({
           invitedById: ctx.session!.user.id,
           token,
           expiresAt,
+          ...(input.nickname ? { nickname: input.nickname } : {}),
         },
       });
     }),
