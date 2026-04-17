@@ -22,7 +22,7 @@ const features = [
     icon: QrCode,
     title: "Scan in under 10 seconds",
     description:
-      "QR scan check-in/out. Batch scan an entire truck in minutes, not hours. Audio confirmation on every item.",
+      "Check out 50 items in under 5 minutes. Batch scan an entire truck before the morning call. Audio confirmation on every scan — no second-guessing.",
     color: "text-[#1B4FD8]",
     bg: "bg-[#1B4FD8]/10",
   },
@@ -30,7 +30,7 @@ const features = [
     icon: MapPin,
     title: "Know exactly where it is",
     description:
-      "Four-level location tracking: Studio → Stage → Set → Position. Every item placed precisely.",
+      "Studio → Stage → Set → Position. Every item tracked to exactly where it was left. No more radio calls asking which stage the Technocrane is on.",
     color: "text-[#0D9488]",
     bg: "bg-[#0D9488]/10",
   },
@@ -38,15 +38,15 @@ const features = [
     icon: FileWarning,
     title: "Full damage history",
     description:
-      "Every scratch, every repair, permanently logged. Know exactly what happened to item #00432 three productions ago.",
+      "Every scratch, every repair, every production — logged and searchable. Know exactly what happened to item #00432 three shoots ago, without digging through a spreadsheet.",
     color: "text-[#D97706]",
     bg: "bg-[#D97706]/10",
   },
   {
     icon: BarChart3,
-    title: "Real-time reports",
+    title: "Wrap-day reports in one tap",
     description:
-      "Available stock, checked out, damaged, by location. Export to CSV or PDF. Production wrap reports in one click.",
+      "Close production day in two minutes — not an afternoon. Available, checked out, damaged, by location. Export to CSV or PDF for your production coordinator. Done.",
     color: "text-[#16A34A]",
     bg: "bg-[#16A34A]/10",
   },
@@ -60,9 +60,9 @@ const features = [
   },
   {
     icon: Users,
-    title: "Built for the whole team",
+    title: "Every crew member, the right access",
     description:
-      "Five role levels from Owner to Read-Only. Your HOD sees everything. Your trainee sees what they need.",
+      "Five role levels from Owner to Read-Only. Your HOD has full control. Your dailies see only what they need — and can't accidentally delete anything.",
     color: "text-[#0D9488]",
     bg: "bg-[#0D9488]/10",
   },
@@ -93,9 +93,11 @@ const plans = [
   {
     name: "Starter",
     price: "£29",
-    description: "For small departments getting started",
+    description: "For single departments on smaller productions",
     badge: null,
     highlighted: false,
+    cta: "Start Free Trial",
+    ctaHref: "/sign-up",
     features: [
       "5 users",
       "500 assets",
@@ -107,9 +109,11 @@ const plans = [
   {
     name: "Professional",
     price: "£89",
-    description: "For active productions",
+    description: "For HODs running multiple stages and larger kits",
     badge: "Most Popular",
     highlighted: true,
+    cta: "Start Free Trial",
+    ctaHref: "/sign-up",
     features: [
       "20 users",
       "10,000 assets",
@@ -125,6 +129,8 @@ const plans = [
     description: "For large studios and touring productions",
     badge: null,
     highlighted: false,
+    cta: "Talk to Sales",
+    ctaHref: "/contact",
     features: [
       "Unlimited users & assets",
       "Everything in Pro",
@@ -136,12 +142,6 @@ const plans = [
   },
 ];
 
-const trustBadges = [
-  "Pinewood Studios",
-  "Warner Bros. Leavesden",
-  "Netflix UK",
-  "ITV Studios",
-];
 
 // ─── Hero Dashboard Mockup ────────────────────────────────────────────────────
 
@@ -422,10 +422,10 @@ export default function HomePage() {
 
           {/* Subheadline */}
           <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-white/50 sm:text-xl">
-            LogiTrak gives Film & TV departments real-time equipment visibility
-            — from the store to the set and back.{" "}
+            Purpose-built for Gaffers, Prop Masters, and Camera HODs. Scan kit
+            out in seconds, know exactly where it is, and close production day{" "}
             <span className="text-white/75">
-              No spreadsheets. No radio calls. No missing kit.
+              without a spreadsheet — or a single radio call.
             </span>
           </p>
 
@@ -459,23 +459,13 @@ export default function HomePage() {
 
       {/* ── SOCIAL PROOF ─────────────────────────────────────────────────── */}
       <section className="border-y border-white/[0.05] py-12">
-        <div className="mx-auto max-w-7xl px-6">
-          <p className="mb-7 text-center text-[11px] font-bold uppercase tracking-widest text-white/20">
-            Trusted by lighting, props, camera and grip departments across the
-            UK
+        <div className="mx-auto max-w-7xl px-6 text-center">
+          <p className="text-[13px] text-white/30">
+            Built for the people who run UK productions —{" "}
+            <span className="text-white/50">
+              lighting, camera, props, and grip departments.
+            </span>
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            {trustBadges.map((name) => (
-              <div
-                key={name}
-                className="rounded-[7px] border border-white/[0.07] bg-white/[0.025] px-5 py-2.5"
-              >
-                <span className="text-[13px] font-semibold text-white/30">
-                  {name}
-                </span>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -487,9 +477,8 @@ export default function HomePage() {
               Features
             </p>
             <h2 className="text-4xl font-extrabold tracking-[-0.03em] text-white sm:text-5xl">
-              Everything your department needs.
+              What&apos;s in LogiTrak
             </h2>
-            <p className="mt-3 text-xl text-white/30">Nothing it doesn&apos;t.</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -577,9 +566,6 @@ export default function HomePage() {
             <p className="text-[15px] text-white/35">
               Each department gets their own LogiTrak workspace. Simple.
             </p>
-            <p className="mt-4 text-[13px] font-semibold text-[#16A34A]">
-              Save 15% with annual billing
-            </p>
           </div>
 
           <div className="grid gap-5 md:grid-cols-3">
@@ -639,14 +625,14 @@ export default function HomePage() {
 
                 {/* CTA */}
                 <Link
-                  href="/sign-up"
+                  href={plan.ctaHref}
                   className={`block rounded-[7px] py-3 text-center text-[13px] font-bold transition-all ${
                     plan.highlighted
                       ? "bg-[#1B4FD8] text-white hover:bg-[#1741B3] hover:shadow-[0_0_20px_rgba(27,79,216,0.4)]"
                       : "border border-white/[0.10] text-white/60 hover:border-white/20 hover:text-white"
                   }`}
                 >
-                  Start Free Trial
+                  {plan.cta}
                 </Link>
               </div>
             ))}
