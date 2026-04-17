@@ -330,8 +330,8 @@ export default function EquipmentPage() {
         isOpen={!!detailId}
         onClose={() => setDetailId(null)}
         onReportDamage={() => {
+          if (detailId) router.push(`/damage?equipmentId=${detailId}`);
           setDetailId(null);
-          // TODO: open damage report modal pre-filled with detailId
         }}
       />
     </>

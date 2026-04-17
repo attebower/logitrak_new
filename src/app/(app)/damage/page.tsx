@@ -9,7 +9,8 @@
  * trpc.equipment.list            → serial/name search for report form
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
@@ -24,15 +25,28 @@ type FilterMode = "active" | "all" | "resolved";
 
 export default function DamagePage() {
   const { workspaceId } = useWorkspace();
+  const searchParams = useSearchParams();
+  const prefillEquipmentId = searchParams.get("equipmentId");
 
-  const [showForm,      setShowForm]      = useState(false);
+  const [showForm,      setShowForm]      = useState(!!prefillEquipmentId);
   const [filter,        setFilter]        = useState<FilterMode>("active");
   const [equipSearch,   setEquipSearch]   = useState("");
-  const [selectedEqId,  setSelectedEqId]  = useState<string | null>(null);
+  const [selectedEqId,  setSelectedEqId]  = useState<string | null>(prefillEquipmentId);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [description,   setDescription]   = useState("");
   const [damageLocation, setDamageLocation] = useState("");
   const [formError,     setFormError]     = useState<string | null>(null);
+
+  // Pre-fill serial label when opened with ?equipmentId=
+  const { data: prefillEquipment } = trpc.equipment.get.useQuery(
+    { workspaceId, equipmentId: prefillEquipmentId! },
+    { enabled: !!prefillEquipmentId }
+  );
+  useEffect(() => {
+    if (prefillEquipment && !selectedSerial) {
+      setSelectedSerial(`${prefillEquipment.serial} — ${prefillEquipment.name}`);
+    }
+  }, [prefillEquipment, selectedSerial]);
 
   // ── Queries ───────────────────────────────────────────────────────────
 

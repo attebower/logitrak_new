@@ -51,6 +51,8 @@ export default function BillingPage() {
     { refetchInterval: 60_000 }
   );
 
+  const { data: workspace } = trpc.workspace.get.useQuery({ workspaceId });
+
   const checkout = trpc.billing.createCheckoutSession.useMutation({
     onSuccess: ({ url }) => { window.location.href = url; },
   });
@@ -134,11 +136,11 @@ export default function BillingPage() {
               }}
               usage={{
                 assets: {
-                  used:  sub.maxAssets > 500000 ? 0 : (sub.maxAssets ?? 500), // TODO: real asset count from workspace
+                  used:  workspace?.equipmentCount ?? 0,
                   limit: sub.maxAssets > 500000 ? "unlimited" : sub.maxAssets,
                 },
                 users: {
-                  used:  1, // TODO: real member count
+                  used:  workspace?.memberCount ?? 1,
                   limit: sub.maxUsers > 500000 ? "unlimited" : sub.maxUsers,
                 },
               }}
