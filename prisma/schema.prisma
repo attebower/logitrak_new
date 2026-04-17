@@ -52,6 +52,12 @@ enum CheckEventType {
   check_in
 }
 
+enum ProjectStatus {
+  active
+  wrapped
+  archived
+}
+
 enum PositionType {
   on_set
   rigged_to_outside_of_set
@@ -84,6 +90,7 @@ model Workspace {
   repairLogs          RepairLog[]
   setSnapshots        SetSnapshot[]
   activityEvents      ActivityEvent[]
+  projects            Project[]
 
   @@map("workspaces")
 }
@@ -204,6 +211,7 @@ model Studio {
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   stages      Stage[]
   checkEvents CheckEvent[]
+  projects    Project[]
 
   @@unique([workspaceId, name])
   @@map("studios")
@@ -313,6 +321,26 @@ model ActivityEvent {
   @@index([workspaceId, createdAt(sort: Desc)])
   @@index([entityType, entityId])
   @@map("activity_events")
+}
+
+model Project {
+  id           String        @id @default(cuid())
+  workspaceId  String
+  name         String
+  industryType IndustryType  @default(film_tv)
+  status       ProjectStatus @default(active)
+  startDate    DateTime?
+  studioId      String?
+  eventLocation String?
+  description   String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  studio    Studio?   @relation(fields: [studioId], references: [id])
+
+  @@index([workspaceId, status])
+  @@map("projects")
 }
 
 model DamageReport {

@@ -19,7 +19,7 @@ import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 import type { NavSection } from "@/components/shared/AppSidebar";
 import {
   LayoutDashboard, ArrowLeftRight, List,
-  FileText, AlertTriangle, Building2, Users, Settings,
+  FileText, AlertTriangle, Building2, Users, Settings, Clapperboard,
 } from "lucide-react";
 
 const NAV_SECTIONS: NavSection[] = [
@@ -29,6 +29,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Dashboard",    href: "/dashboard",  icon: <LayoutDashboard className="h-4 w-4" /> },
       { label: "Check In/Out", href: "/checkinout", icon: <ArrowLeftRight className="h-4 w-4" /> },
       { label: "Equipment",    href: "/equipment",  icon: <List className="h-4 w-4" /> },
+      { label: "Projects",     href: "/projects",   icon: <Clapperboard className="h-4 w-4" /> },
     ],
   },
   {
