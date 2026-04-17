@@ -77,6 +77,18 @@ export default function CheckInOutPage() {
   const [scanSearch,  setScanSearch]  = useState("");
   const utils = trpc.useUtils();
 
+  // Repair prompt — shown when checking in a damaged/under-repair item
+  const [repairPrompt, setRepairPrompt] = useState<{
+    serial: string;
+    name: string;
+    equipmentId: string;
+    damageStatus: string;
+  } | null>(null);
+  const [repairDescription, setRepairDescription] = useState("");
+  const [repairedBy, setRepairedBy] = useState("");
+  const [repairLocation, setRepairLocation] = useState("");
+  const [repairSubmitting, setRepairSubmitting] = useState(false);
+
   // ── Live data ─────────────────────────────────────────────────────────
 
   // Studios for LocationPicker (load once)
@@ -162,12 +174,24 @@ export default function CheckInOutPage() {
 
     // Client-side damage pre-flight
     if (match.damageStatus === "damaged" || match.damageStatus === "under_repair") {
-      addWarning({
-        serial,
-        kind: "damaged",
-        message: `${serial} is ${match.damageStatus.replace("_", " ")} and cannot be checked ${mode === "out" ? "out" : "in"}.`,
-      });
-      return;
+      if (mode === "out") {
+        // Block checkout of damaged items
+        addWarning({
+          serial,
+          kind: "damaged",
+          message: `${serial} is ${match.damageStatus.replace("_", " ")} and cannot be checked out.`,
+        });
+        return;
+      } else {
+        // On check-in, show repair prompt instead of blocking
+        setRepairPrompt({
+          serial: match.serial,
+          name: match.name,
+          equipmentId: match.id,
+          damageStatus: match.damageStatus,
+        });
+        return;
+      }
     }
 
     // Mode-specific state warning
@@ -230,6 +254,7 @@ export default function CheckInOutPage() {
   // ── Confirm check-in ───────────────────────────────────────────────────
 
   const createDamageReport = trpc.damage.report.create.useMutation();
+  const createRepairLog = trpc.damage.repairLog.create.useMutation();
 
   function handleInConfirm() {
     const damagedItems = inBatch.filter((i) => i.condition === "damaged");
@@ -279,6 +304,95 @@ export default function CheckInOutPage() {
   return (
     <>
       <AppTopbar title="Check In / Out" />
+
+      {/* ── Repair prompt modal ── */}
+      {repairPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-[17px] font-bold text-surface-dark mb-1">
+              This item is {repairPrompt.damageStatus.replace("_", " ")}
+            </h2>
+            <p className="text-[13px] text-grey mb-5">
+              <span className="font-semibold text-surface-dark">{repairPrompt.serial}</span> — {repairPrompt.name}<br />
+              Has this item been repaired and is it ready to go back into service?
+            </p>
+
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-[11px] font-semibold text-grey uppercase tracking-wider mb-1">What was repaired? *</label>
+                <textarea
+                  value={repairDescription}
+                  onChange={(e) => setRepairDescription(e.target.value)}
+                  placeholder="Describe the repair work done…"
+                  rows={3}
+                  className="w-full border border-grey-mid rounded-lg px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:ring-1 focus:ring-brand-blue resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-grey uppercase tracking-wider mb-1">Repaired by</label>
+                <input
+                  value={repairedBy}
+                  onChange={(e) => setRepairedBy(e.target.value)}
+                  placeholder="Name or company"
+                  className="w-full border border-grey-mid rounded-lg px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-grey uppercase tracking-wider mb-1">Repair location</label>
+                <input
+                  value={repairLocation}
+                  onChange={(e) => setRepairLocation(e.target.value)}
+                  placeholder="Workshop, on-set, manufacturer…"
+                  className="w-full border border-grey-mid rounded-lg px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                disabled={!repairDescription.trim() || repairSubmitting}
+                onClick={async () => {
+                  if (!repairDescription.trim()) return;
+                  setRepairSubmitting(true);
+                  try {
+                    await createRepairLog.mutateAsync({
+                      workspaceId,
+                      equipmentId: repairPrompt.equipmentId,
+                      description: repairDescription.trim(),
+                      repairedByName: repairedBy.trim() || "Unknown",
+                      repairLocation: repairLocation.trim() || "Unknown",
+                    });
+                    // Now add to the check-in batch
+                    handleScan(repairPrompt.serial);
+                    setRepairPrompt(null);
+                    setRepairDescription("");
+                    setRepairedBy("");
+                    setRepairLocation("");
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setRepairSubmitting(false);
+                  }
+                }}
+                className="flex-1 bg-brand-blue text-white rounded-lg py-2.5 text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {repairSubmitting ? "Logging repair…" : "Yes, log repair & check in"}
+              </button>
+              <button
+                onClick={() => {
+                  setRepairPrompt(null);
+                  setRepairDescription("");
+                  setRepairedBy("");
+                  setRepairLocation("");
+                }}
+                className="flex-1 bg-grey-light text-surface-dark rounded-lg py-2.5 text-[13px] font-semibold border border-grey-mid"
+              >
+                No, keep as damaged
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-5">
