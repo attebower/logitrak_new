@@ -127,6 +127,133 @@ const ACTIVITY_COLS: ColumnDef[] = [
   { key: "entity",    label: "Equipment", width: "w-full" },
 ];
 
+
+// -- Equipment expanded detail --
+
+function EquipmentExpandedDetail({ row, workspaceId }: { row: Record<string, unknown>; workspaceId: string }) {
+  const equipmentId = row.id as string;
+  const { data, isLoading } = trpc.equipment.getDetail.useQuery(
+    { workspaceId, equipmentId },
+    { enabled: !!equipmentId }
+  );
+
+  if (isLoading) return <p className="text-[12px] text-grey py-2">Loading...</p>;
+  if (!data) return <p className="text-[12px] text-grey py-2">No details available.</p>;
+
+  const isCheckedOut = data.status === "checked_out";
+
+  type CheckEvent = { id: string; eventType: string; createdAt: string; user?: { displayName?: string }; studio?: { name?: string }; stage?: { name?: string }; set?: { name?: string }; positionType?: string; exactLocationDescription?: string };
+  type DamageReport = { id: string; damageDescription?: string; damageLocation?: string; reportedAt: string; reporter?: { displayName?: string }; repairLogs: { id: string; description?: string; repairedByName?: string; repairLocation?: string; repairedAt?: string }[] };
+
+  const lastCheckOut = (data.checkEvents as unknown as CheckEvent[]).find((e) => e.eventType === "check_out");
+
+  function fmt(d: Date | string | null | undefined) {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function duration(from: Date | string | null | undefined) {
+    if (!from) return "—";
+    const ms = Date.now() - new Date(from).getTime();
+    const days = Math.floor(ms / 86400000);
+    const hrs = Math.floor((ms % 86400000) / 3600000);
+    if (days > 0) return `${days}d ${hrs}h`;
+    return `${hrs}h`;
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-[12px]">
+
+      {/* Current status */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold text-grey uppercase tracking-wider">Current Status</p>
+        <div className="space-y-1.5">
+          <div className="flex justify-between">
+            <span className="text-grey">Status</span>
+            <span className={`font-medium ${isCheckedOut ? "text-status-amber" : data.status === "available" ? "text-status-green" : "text-status-red"}`}>
+              {data.status.replace(/_/g, " ")}
+            </span>
+          </div>
+          {isCheckedOut && lastCheckOut && (
+            <>
+              <div className="flex justify-between"><span className="text-grey">Checked out by</span><span className="font-medium text-surface-dark">{lastCheckOut.user?.displayName ?? "—"}</span></div>
+              <div className="flex justify-between"><span className="text-grey">Out since</span><span className="text-surface-dark">{fmt(lastCheckOut.createdAt)}</span></div>
+              <div className="flex justify-between"><span className="text-grey">Duration</span><span className="font-medium text-surface-dark">{duration(lastCheckOut.createdAt)}</span></div>
+              <div className="flex justify-between"><span className="text-grey">Location</span>
+                <span className="text-surface-dark text-right max-w-[180px]">
+                  {[lastCheckOut.studio?.name, lastCheckOut.stage?.name, lastCheckOut.set?.name, lastCheckOut.positionType, lastCheckOut.exactLocationDescription].filter(Boolean).join(" → ") || "—"}
+                </span>
+              </div>
+            </>
+          )}
+          <div className="flex justify-between"><span className="text-grey">Added</span><span className="text-surface-dark">{fmt(data.createdAt)}</span></div>
+          {data.category && <div className="flex justify-between"><span className="text-grey">Category</span><span className="text-surface-dark">{data.category.name}</span></div>}
+        </div>
+      </div>
+
+      {/* Checkout history */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold text-grey uppercase tracking-wider">Checkout History</p>
+        {data.checkEvents.length === 0
+          ? <p className="text-grey">Never checked out.</p>
+          : <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+              {(data.checkEvents as unknown as CheckEvent[]).slice(0, 10).map((ev) => (
+                <div key={ev.id} className="border-l-2 pl-3 py-0.5 space-y-0.5"
+                  style={{ borderColor: ev.eventType === "check_out" ? "#D97706" : "#16A34A" }}>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium ${ev.eventType === "check_out" ? "text-status-amber" : "text-status-green"}`}>
+                      {ev.eventType === "check_out" ? "Checked out" : "Checked in"}
+                    </span>
+                    <span className="text-grey">{fmt(ev.createdAt)}</span>
+                  </div>
+                  {ev.eventType === "check_out" && (
+                    <p className="text-grey">
+                      {ev.user?.displayName ?? "Unknown"}
+                      {[ev.studio?.name, ev.stage?.name, ev.set?.name].filter(Boolean).length > 0
+                        ? " — " + [ev.studio?.name, ev.stage?.name, ev.set?.name].filter(Boolean).join(" → ")
+                        : ""}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+
+      {/* Damage & repair */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold text-grey uppercase tracking-wider">Damage & Repair</p>
+        {data.damageReports.length === 0
+          ? <p className="text-grey">No damage reported.</p>
+          : <div className="space-y-3 max-h-52 overflow-y-auto pr-1">
+              {(data.damageReports as unknown as DamageReport[]).map((dr) => (
+                <div key={dr.id} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-status-red">Damage</span>
+                    <span className="text-grey">{fmt(dr.reportedAt)}</span>
+                  </div>
+                  <p className="text-surface-dark">{dr.damageDescription ?? "—"}</p>
+                  <p className="text-grey">By {dr.reporter?.displayName ?? "Unknown"}{dr.damageLocation ? " — " + dr.damageLocation : ""}</p>
+                  {dr.repairLogs.map((rl) => (
+                    <div key={rl.id} className="pl-3 border-l-2 border-status-teal mt-1 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-status-teal">Repaired</span>
+                        <span className="text-grey">{fmt(rl.repairedAt)}</span>
+                      </div>
+                      <p className="text-surface-dark">{rl.description ?? "—"}</p>
+                      <p className="text-grey">By {rl.repairedByName ?? "Unknown"}{rl.repairLocation ? " — " + rl.repairLocation : ""}</p>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
@@ -301,6 +428,10 @@ export default function ReportsPage() {
             rows={rows}
             title={TABS.find((t) => t.id === activeTab)?.label ?? ""}
             onExport={() => downloadCsv(filename, rows, columns)}
+            expandedContent={activeTab !== "activity"
+              ? (row) => <EquipmentExpandedDetail row={row} workspaceId={workspaceId} />
+              : undefined
+            }
           />
         </div>
       </div>

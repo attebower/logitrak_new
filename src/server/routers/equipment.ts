@@ -82,6 +82,33 @@ export const equipmentRouter = router({
       return equipment;
     }),
 
+  getDetail: workspaceProcedure
+    .input(z.object({ workspaceId: z.string(), equipmentId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const equipment = await ctx.prisma.equipment.findFirst({
+        where: { id: input.equipmentId, workspaceId: ctx.workspaceId! },
+        include: {
+          category: true,
+          checkEvents: {
+            orderBy: { createdAt: "desc" },
+            include: { user: true, studio: true, stage: true, set: true },
+          },
+          damageReports: {
+            orderBy: { reportedAt: "desc" },
+            include: {
+              reporter: true,
+              repairLogs: {
+                orderBy: { repairedAt: "desc" },
+                include: { repairer: true },
+              },
+            },
+          },
+        },
+      });
+      if (!equipment) throw new TRPCError({ code: "NOT_FOUND", message: "Equipment not found" });
+      return equipment;
+    }),
+
   create: workspaceProcedure
     .input(
       z.object({
