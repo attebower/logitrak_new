@@ -77,7 +77,7 @@ export default function EquipmentPage() {
     offset: 0,
   });
 
-  const { data: detailData } = trpc.equipment.get.useQuery(
+  const { data: detailData } = trpc.equipment.getDetail.useQuery(
     { workspaceId, equipmentId: detailId! },
     { enabled: !!detailId }
   );

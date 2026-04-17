@@ -16,7 +16,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -49,8 +48,8 @@ export interface ReportTableProps<T extends Record<string, unknown>> {
   exportLabel?: string;
   emptyMessage?: string;
   className?:   string;
-  /** Optional: render expanded detail row. Receives the row. */
-  expandedContent?: (row: T) => React.ReactNode;
+  /** Optional: called when a row is clicked */
+  onRowClick?: (row: T) => void;
 }
 
 export function ReportTable<T extends Record<string, unknown>>({
@@ -61,11 +60,10 @@ export function ReportTable<T extends Record<string, unknown>>({
   exportLabel = "Export CSV",
   emptyMessage = "No data to display",
   className,
-  expandedContent,
+  onRowClick,
 }: ReportTableProps<T>) {
   const [sortKey, setSortKey]   = useState<string | null>(null);
   const [sortDir, setSortDir]   = useState<SortDirection>("asc");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   function handleSort(key: string) {
     if (sortKey === key) {
@@ -110,7 +108,6 @@ export function ReportTable<T extends Record<string, unknown>>({
         <table className="w-full border-collapse table-fixed">
           <thead>
             <tr>
-              {expandedContent && <th className="w-6 bg-grey-light border-b border-grey-mid" />}
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -151,54 +148,33 @@ export function ReportTable<T extends Record<string, unknown>>({
                 </td>
               </tr>
             ) : (
-              sortedRows.map((row, i) => {
-                const rowId = (row.id as string) ?? String(i);
-                const isExpanded = expandedId === rowId;
-                return (
-                  <>
-                    <tr
-                      key={rowId}
-                      className={cn(
-                        "border-b border-grey-mid last:border-b-0 transition-colors",
-                        expandedContent ? "cursor-pointer hover:bg-grey-light/70" : "hover:bg-grey-light/70",
-                        isExpanded && "bg-grey-light/50"
-                      )}
-                      onClick={() => expandedContent && setExpandedId(isExpanded ? null : rowId)}
-                    >
-                      {expandedContent && (
-                        <td className="pl-3 pr-0 py-3 w-6">
-                          {isExpanded
-                            ? <ChevronDown size={14} className="text-grey" />
-                            : <ChevronRight size={14} className="text-grey" />}
-                        </td>
-                      )}
-                      {columns.map((col) => {
-                        const value = row[col.key];
-                        return (
-                          <td
-                            key={col.key}
-                            className={cn(
-                              "px-4 py-3 text-[13px] text-surface-dark",
-                              col.key !== "name" && col.key !== "description" && col.key !== "location" && "whitespace-nowrap",
-                              col.align === "right" && "text-right",
-                              col.align === "center" && "text-center"
-                            )}
-                          >
-                            {col.render ? col.render(row, value) : String(value ?? "—")}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                    {isExpanded && expandedContent && (
-                      <tr key={`${rowId}-expanded`} className="border-b border-grey-mid bg-grey-light/30">
-                        <td colSpan={columns.length + 1} className="px-6 py-4">
-                          {expandedContent(row)}
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                );
-              })
+              sortedRows.map((row, i) => (
+                <tr
+                  key={(row.id as string) ?? i}
+                  onClick={() => onRowClick?.(row)}
+                  className={cn(
+                    "border-b border-grey-mid last:border-b-0 transition-colors hover:bg-grey-light/70",
+                    onRowClick && "cursor-pointer"
+                  )}
+                >
+                  {columns.map((col) => {
+                    const value = row[col.key];
+                    return (
+                      <td
+                        key={col.key}
+                        className={cn(
+                          "px-4 py-3 text-[13px] text-surface-dark",
+                          col.key !== "name" && col.key !== "description" && col.key !== "location" && "whitespace-nowrap",
+                          col.align === "right" && "text-right",
+                          col.align === "center" && "text-center"
+                        )}
+                      >
+                        {col.render ? col.render(row, value) : String(value ?? "—")}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
             )}
           </tbody>
         </table>

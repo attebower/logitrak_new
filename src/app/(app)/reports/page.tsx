@@ -8,14 +8,17 @@
  * CSV export: downloads tRPC result as a CSV file client-side
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { ReportTable } from "@/components/shared/ReportTable";
 import { ReportFilterBar } from "@/components/shared/ReportFilterBar";
+import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { ColumnDef } from "@/components/shared/ReportTable";
 import type { ReportFilters } from "@/components/shared/ReportFilterBar";
+import type { EquipmentDetail } from "@/components/shared/EquipmentDetailPanel";
 
 // ── Tab definition ────────────────────────────────────────────────────────
 
@@ -258,8 +261,49 @@ function EquipmentExpandedDetail({ row, workspaceId }: { row: Record<string, unk
 
 export default function ReportsPage() {
   const { workspaceId } = useWorkspace();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("status");
   const [filters, setFilters] = useState<ReportFilters>({});
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  // Fetch full detail for drawer
+  const { data: detailData } = trpc.equipment.getDetail.useQuery(
+    { workspaceId, equipmentId: detailId! },
+    { enabled: !!detailId }
+  );
+
+  const detail: EquipmentDetail | null = useMemo(() => {
+    if (!detailData) return null;
+    const eq = detailData;
+    const mapStatus = (s: string) => s === "available" ? "available" : s === "checked_out" ? "checked-out" : "retired";
+    const mapDmg = (d: string) => d === "damaged" ? "damaged" : d === "under_repair" ? "damaged" : d === "repaired" ? "available" : null;
+    return {
+      id:       eq.id,
+      serial:   eq.serial,
+      type:     eq.name,
+      category: (eq.category as {name?: string} | null)?.name ?? "Uncategorised",
+      status:   (mapDmg(eq.damageStatus) ?? mapStatus(eq.status)) as EquipmentDetail["status"],
+      notes:    (eq.notes as string | null) ?? undefined,
+      addedAt:  new Date(eq.createdAt).toISOString(),
+      checkHistory: (eq.checkEvents as unknown as {id:string;eventType:string;createdAt:string;user?:{displayName?:string;email?:string};studio?:{name?:string};stage?:{name?:string};set?:{name?:string};}[]).map((ce) => ({
+        id:        ce.id,
+        type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
+        location:  [ce.studio?.name, ce.stage?.name, ce.set?.name].filter(Boolean).join(" → "),
+        checkedBy: ce.user?.displayName ?? ce.user?.email ?? "Unknown",
+        timestamp: new Date(ce.createdAt).toISOString(),
+      })),
+      damageHistory: (eq.damageReports as unknown as {id:string;damageDescription?:string;reportedAt:string;reporter?:{displayName?:string;email?:string};repairLogs:{id:string;description?:string;repairedByName?:string;repairedAt?:string}[];}[]).map((dr) => ({
+        id:          dr.id,
+        description: dr.damageDescription ?? "",
+        reportedBy:  dr.reporter?.displayName ?? dr.reporter?.email ?? "Unknown",
+        timestamp:   new Date(dr.reportedAt).toISOString(),
+        status:      "damaged" as const,
+        resolution:  dr.repairLogs[0]?.description,
+        repairedBy:  dr.repairLogs[0]?.repairedByName,
+        repairedAt:  dr.repairLogs[0]?.repairedAt ? new Date(dr.repairLogs[0].repairedAt).toISOString() : undefined,
+      })),
+    };
+  }, [detailData]);
 
   // ── Status tab ───────────────────────────────────────────────────────
 
@@ -428,13 +472,21 @@ export default function ReportsPage() {
             rows={rows}
             title={TABS.find((t) => t.id === activeTab)?.label ?? ""}
             onExport={() => downloadCsv(filename, rows, columns)}
-            expandedContent={activeTab !== "activity"
-              ? (row) => <EquipmentExpandedDetail row={row} workspaceId={workspaceId} />
-              : undefined
-            }
+            onRowClick={activeTab !== "activity" ? (row) => setDetailId(row.id as string) : undefined}
           />
         </div>
       </div>
+
+      {/* Equipment detail drawer */}
+      <EquipmentDetailPanel
+        equipment={detail}
+        isOpen={!!detailId}
+        onClose={() => setDetailId(null)}
+        onReportDamage={() => {
+          if (detailId) router.push(`/damage?equipmentId=${detailId}`);
+          setDetailId(null);
+        }}
+      />
     </>
   );
 }
