@@ -230,13 +230,29 @@ export default function CheckInOutPage() {
 
   // ── Confirm check-in ───────────────────────────────────────────────────
 
+  const createDamageReport = trpc.damage.report.create.useMutation();
+
   function handleInConfirm() {
-    checkIn.mutate({
-      workspaceId,
-      equipmentIds: inBatch.map((i) => i.equipmentId),
-    });
-    // TODO: items with condition="damaged" should auto-create damage reports
-    // Wire once trpc.damage.report.create is ready in the check-in flow
+    const damagedItems = inBatch.filter((i) => i.condition === "damaged");
+
+    checkIn.mutate(
+      {
+        workspaceId,
+        equipmentIds: inBatch.map((i) => i.equipmentId),
+      },
+      {
+        onSuccess: () => {
+          // Auto-create damage reports for items flagged as damaged during check-in
+          for (const item of damagedItems) {
+            createDamageReport.mutate({
+              workspaceId,
+              equipmentId:  item.equipmentId,
+              description:  `Damage noticed on check-in for ${item.serial}`,
+            });
+          }
+        },
+      }
+    );
   }
 
   // ── Location validation ────────────────────────────────────────────────

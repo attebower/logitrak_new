@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, workspaceProcedure } from "../trpc";
-import { IndustryType } from "@prisma/client";
+import { IndustryType, WorkspaceRole } from "@prisma/client";
+
+const ADMIN_ROLES: WorkspaceRole[] = ["owner", "admin"];
+
+function requireRole(userRole: WorkspaceRole | null, allowed: WorkspaceRole[]) {
+  if (!userRole || !allowed.includes(userRole)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Insufficient permissions" });
+  }
+}
 
 export const workspaceRouter = router({
   get: workspaceProcedure
@@ -78,6 +86,47 @@ export const workspaceRouter = router({
             code: "CONFLICT",
             message: "Workspace name already taken — please choose a different name",
           });
+        }
+        throw err;
+      }
+    }),
+
+  update: workspaceProcedure
+    .input(
+      z.object({
+        workspaceId: z.string(),
+        name: z.string().min(2).optional(),
+        industryType: z.nativeEnum(IndustryType).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      const data: { name?: string; slug?: string; industryType?: IndustryType } = {};
+      if (input.name !== undefined) {
+        data.name = input.name;
+        data.slug = input.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+      }
+      if (input.industryType !== undefined) {
+        data.industryType = input.industryType;
+      }
+
+      if (Object.keys(data).length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No fields to update" });
+      }
+
+      try {
+        return await ctx.prisma.workspace.update({
+          where: { id: ctx.workspaceId! },
+          data,
+          select: { id: true, name: true, slug: true, industryType: true },
+        });
+      } catch (err: unknown) {
+        if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "P2002") {
+          throw new TRPCError({ code: "CONFLICT", message: "Workspace name already taken" });
         }
         throw err;
       }

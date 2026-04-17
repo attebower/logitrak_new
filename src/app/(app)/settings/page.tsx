@@ -19,15 +19,11 @@ import { Button } from "@/components/ui/button";
 import { SettingsSection, SettingsPage, SettingsField } from "@/components/shared/SettingsSection";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
+import type { IndustryType } from "@prisma/client";
 
-const INDUSTRY_OPTIONS = [
-  { value: "film_tv",      label: "Film & TV Production" },
-  { value: "live_events",  label: "Live Events & Concerts" },
-  { value: "theatre",      label: "Theatre & Performing Arts" },
-  { value: "corporate_av", label: "Corporate A/V" },
-  { value: "photography",  label: "Photography" },
-  { value: "broadcasting", label: "News & Broadcasting" },
-  { value: "other",        label: "Other" },
+const INDUSTRY_OPTIONS: { value: IndustryType; label: string }[] = [
+  { value: "film_tv", label: "Film & TV Production" },
+  { value: "events",  label: "Live Events & Productions" },
 ];
 
 export default function SettingsPageComponent() {
@@ -35,7 +31,7 @@ export default function SettingsPageComponent() {
   const isOwner = userRole === "owner";
 
   const [workspaceName,  setWorkspaceName]  = useState("");
-  const [industryType,   setIndustryType]   = useState("");
+  const [industryType,   setIndustryType]   = useState<IndustryType | "">("");
   const [saveStatus,     setSaveStatus]     = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [deleteConfirm,  setDeleteConfirm]  = useState("");
   const [toast,          setToast]          = useState<string | null>(null);
@@ -47,26 +43,39 @@ export default function SettingsPageComponent() {
 
   // ── Load workspace ────────────────────────────────────────────────────
 
-  const { data: workspace } = trpc.workspace.get.useQuery({ workspaceId });
+  const { data: workspace, refetch: refetchWorkspace } = trpc.workspace.get.useQuery({ workspaceId });
+
+  const updateWorkspace = trpc.workspace.update.useMutation({
+    onSuccess: () => {
+      void refetchWorkspace();
+      setSaveStatus("saved");
+      showToast("Workspace settings saved.");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    },
+    onError: (err) => {
+      setSaveStatus("error");
+      showToast(err.message);
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    },
+  });
 
   useEffect(() => {
     if (workspace) {
       setWorkspaceName(workspace.name);
-      setIndustryType(workspace.industryType ?? "");
+      setIndustryType((workspace.industryType ?? "") as IndustryType | "");
     }
   }, [workspace]);
 
   // ── Handlers ─────────────────────────────────────────────────────────
 
-  async function handleSave(e: React.FormEvent) {
+  function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaveStatus("saving");
-    // TODO: trpc.workspace.update.mutate({ workspaceId, name: workspaceName, industryType })
-    // Sage's workspace.update procedure is not yet in the router.
-    await new Promise((r) => setTimeout(r, 500));
-    setSaveStatus("saved");
-    showToast("Workspace settings saved (stubbed — Sage's update procedure coming soon)");
-    setTimeout(() => setSaveStatus("idle"), 2000);
+    updateWorkspace.mutate({
+      workspaceId,
+      name:         workspaceName.trim() || undefined,
+      industryType: (industryType as IndustryType) || undefined,
+    });
   }
 
   function handleDeleteWorkspace() {
@@ -130,7 +139,7 @@ export default function SettingsPageComponent() {
               >
                 <select
                   value={industryType}
-                  onChange={(e) => setIndustryType(e.target.value)}
+                  onChange={(e) => setIndustryType(e.target.value as IndustryType | "")}
                   className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
                 >
                   <option value="">Select industry…</option>
