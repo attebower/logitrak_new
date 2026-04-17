@@ -305,7 +305,7 @@ export default function CheckInOutPage() {
                   {/* Step 1: Scan */}
                   {outStep === "scan" && (
                     <div className="space-y-4">
-                      <ScanArea onScan={handleScan} onManualEntry={handleScan} />
+                      <div className="lg:hidden"><ScanArea onScan={handleScan} onManualEntry={handleScan} /></div>
 
                       {/* Manual search */}
                       <div className="relative">
@@ -457,7 +457,7 @@ export default function CheckInOutPage() {
                   {/* Step 1: Scan */}
                   {inStep === "scan" && (
                     <div className="space-y-4">
-                      <ScanArea onScan={handleScan} onManualEntry={handleScan} />
+                      <div className="lg:hidden"><ScanArea onScan={handleScan} onManualEntry={handleScan} /></div>
 
                       <div className="relative">
                         <input
