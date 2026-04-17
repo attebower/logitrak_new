@@ -362,8 +362,17 @@ export default function CheckInOutPage() {
                       repairedByName: repairedBy.trim() || "Unknown",
                       repairLocation: repairLocation.trim() || "Unknown",
                     });
-                    // Now add to the check-in batch
-                    handleScan(repairPrompt.serial);
+                    // Invalidate cache so the item shows as repaired
+                    await utils.equipment.list.invalidate();
+                    // Add directly to batch — skip handleScan to avoid stale cache check
+                    const entry: BatchEntryWithCondition = {
+                      serial: repairPrompt.serial,
+                      type: repairPrompt.name,
+                      status: "ok" as BatchItemStatus,
+                      equipmentId: repairPrompt.equipmentId,
+                      condition: "good",
+                    };
+                    setInBatch((b) => [...b, entry]);
                     setRepairPrompt(null);
                     setRepairDescription("");
                     setRepairedBy("");
