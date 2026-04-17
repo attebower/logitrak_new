@@ -261,7 +261,7 @@ export default function ReportsPage() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 pt-5 space-y-4">
           {/* Filter bar — date range on all tabs; location on activity */}
           {activeTab === "activity" && (
             <ReportFilterBar

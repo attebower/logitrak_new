@@ -92,9 +92,9 @@ export function ReportTable<T extends Record<string, unknown>>({
   return (
     <div className={cn("bg-white rounded-card border border-grey-mid overflow-hidden", className)}>
       {/* ── Table header bar ── */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-grey-mid">
-        <span className="text-[14px] font-bold text-surface-dark">{title}</span>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-grey-mid">
+        <span className="text-[12px] font-semibold text-grey uppercase tracking-wider">{title}</span>
+        <div className="flex items-center gap-3">
           <span className="text-[12px] text-grey">
             {rows.length} {rows.length === 1 ? "result" : "results"}
           </span>
@@ -115,8 +115,8 @@ export function ReportTable<T extends Record<string, unknown>>({
                 <th
                   key={col.key}
                   className={cn(
-                    "bg-grey-light px-4 py-2.5 text-left border-b border-grey-mid",
-                    "text-caption text-grey uppercase tracking-[0.03125rem] font-bold",
+                    "bg-grey-light px-4 py-3 text-left border-b border-grey-mid",
+                    "text-[11px] text-grey uppercase tracking-wider font-semibold",
                     col.sortable !== false && "cursor-pointer select-none hover:text-surface-dark",
                     col.width,
                     col.align === "right" && "text-right",
@@ -162,7 +162,7 @@ export function ReportTable<T extends Record<string, unknown>>({
                       <td
                         key={col.key}
                         className={cn(
-                          "px-4 py-[11px] text-[12px] text-surface-dark",
+                          "px-4 py-3 text-[13px] text-surface-dark",
                           col.align === "right" && "text-right",
                           col.align === "center" && "text-center"
                         )}
