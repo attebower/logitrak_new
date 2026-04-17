@@ -40,23 +40,27 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
-  // TODO Sprint 2: fetch workspace role from DB and enforce:
-  // - ADMIN_ROUTES: redirect non-admin to /dashboard with ?error=unauthorized
-  // - Write actions: enforced at tRPC layer by Sage
-  // For now, stub: if user has app_metadata.role === "read_only" or "operator",
-  // block admin routes.
+  // Enforce admin route gating using the workspace role from the DB.
+  // app_metadata.role is not populated — roles live in WorkspaceUser.role.
   if (user) {
-    const role = (user.app_metadata?.role as string | undefined) ?? "member";
     const isAdminRoute = ADMIN_ROUTES.some(r => request.nextUrl.pathname.startsWith(r));
-    if (isAdminRoute && role === "operator") {
-      const url = new URL("/dashboard", request.url);
-      url.searchParams.set("error", "unauthorized");
-      return NextResponse.redirect(url);
-    }
-    if (isAdminRoute && role === "read_only") {
-      const url = new URL("/dashboard", request.url);
-      url.searchParams.set("error", "unauthorized");
-      return NextResponse.redirect(url);
+    if (isAdminRoute) {
+      const { data: membership } = await supabase
+        .from("workspace_users")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      const role = membership?.role ?? null;
+      const ADMIN_ROLES = ["owner", "admin", "manager"];
+      if (!role || !ADMIN_ROLES.includes(role)) {
+        const url = new URL("/dashboard", request.url);
+        url.searchParams.set("error", "unauthorized");
+        return NextResponse.redirect(url);
+      }
     }
   }
 
