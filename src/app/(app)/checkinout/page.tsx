@@ -313,7 +313,7 @@ export default function CheckInOutPage() {
                           type="search"
                           placeholder="Or search by name / serial…"
                           value={scanSearch}
-                          onChange={(e) => setScanSearch(e.target.value)}
+                          onChange={(e) => { const v = e.target.value; setScanSearch(v); if (/^[0-9]{5}$/.test(v.trim())) { handleScan(v.trim()); setScanSearch(""); } }}
                           className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
                         />
                         {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
@@ -464,7 +464,7 @@ export default function CheckInOutPage() {
                           type="search"
                           placeholder="Or search by name / serial…"
                           value={scanSearch}
-                          onChange={(e) => setScanSearch(e.target.value)}
+                          onChange={(e) => { const v = e.target.value; setScanSearch(v); if (/^[0-9]{5}$/.test(v.trim())) { handleScan(v.trim()); setScanSearch(""); } }}
                           className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
                         />
                         {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
