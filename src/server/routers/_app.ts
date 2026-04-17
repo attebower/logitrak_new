@@ -1,6 +1,5 @@
 import { router } from "../trpc";
 import { workspaceRouter } from "./workspace";
-import { userRouter } from "./user";
 import { equipmentRouter } from "./equipment";
 import { dashboardRouter } from "./dashboard";
 import { activityRouter } from "./activity";
@@ -28,7 +27,6 @@ export const appRouter = router({
   team: teamRouter,
   admin: adminRouter,
   billing: billingRouter,
-  user: userRouter,
 });
 
 export type AppRouter = typeof appRouter;
