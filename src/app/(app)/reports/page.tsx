@@ -12,7 +12,6 @@ import { useState } from "react";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { ReportTable } from "@/components/shared/ReportTable";
 import { ReportFilterBar } from "@/components/shared/ReportFilterBar";
-import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { ColumnDef } from "@/components/shared/ReportTable";
@@ -83,40 +82,49 @@ const STATUS_COLS: ColumnDef[] = [
     }},
 ];
 
+const statusText = (s: string) => {
+  const colour = s === "available" ? "text-status-green" : s === "checked_out" ? "text-status-amber" : "text-grey";
+  return <span className={`text-[13px] font-medium ${colour}`}>{s.replace(/_/g, " ")}</span>;
+};
+
+const damageText = (ds: string) => {
+  if (ds === "normal" || !ds) return <span className="text-[13px] text-grey">—</span>;
+  const colour = ds === "damaged" ? "text-status-red" : ds === "under_repair" ? "text-status-amber" : "text-status-teal";
+  return <span className={`text-[13px] font-medium ${colour}`}>{ds.replace(/_/g, " ")}</span>;
+};
+
+const categoryText = (c: string) => <span className="text-[13px] text-grey">{c || "—"}</span>;
+
 const CHECKED_OUT_COLS: ColumnDef[] = [
-  { key: "serial",    label: "Serial",      width: "w-24" },
-  { key: "name",      label: "Name",        width: "w-full" },
-  { key: "category",  label: "Category",    width: "w-28" },
-  { key: "location",  label: "Location",    width: "w-48" },
-  { key: "checkedBy", label: "Checked Out By", width: "w-36" },
-  { key: "since",     label: "Since",       width: "w-28" },
+  { key: "serial",    label: "Serial",         width: "w-28" },
+  { key: "name",      label: "Name",           width: "w-full" },
+  { key: "category",  label: "Category",       width: "w-40", render: (row) => categoryText(String(row.category ?? "")) },
+  { key: "location",  label: "Location",       width: "w-48" },
+  { key: "checkedBy", label: "Checked Out By",  width: "w-40" },
+  { key: "since",     label: "Since",           width: "w-28" },
 ];
 
 const DAMAGED_COLS: ColumnDef[] = [
-  { key: "serial",       label: "Serial",     width: "w-24" },
-  { key: "name",         label: "Name",       width: "w-full" },
-  { key: "damageStatus", label: "Status",     width: "w-32",
-    render: (row) => {
-      const ds = String(row.damageStatus ?? "");
-      const variant = ds === "under_repair" ? "under-repair" : "damaged";
-      return <Badge variant={variant}>{ds.replace("_", " ")}</Badge>;
-    }},
-  { key: "reportedBy",   label: "Reported By", width: "w-36" },
+  { key: "serial",       label: "Serial",      width: "w-28" },
+  { key: "name",         label: "Name",        width: "w-full" },
+  { key: "damageStatus", label: "Status",      width: "w-36", render: (row) => damageText(String(row.damageStatus ?? "")) },
+  { key: "reportedBy",   label: "Reported By", width: "w-40" },
   { key: "reportedAt",   label: "Reported",    width: "w-28" },
 ];
 
 const BY_LOCATION_COLS: ColumnDef[] = [
-  { key: "serial",   label: "Serial",   width: "w-24" },
+  { key: "serial",   label: "Serial",   width: "w-28" },
   { key: "name",     label: "Name",     width: "w-full" },
+  { key: "status",   label: "Status",   width: "w-36", render: (row) => statusText(String(row.status ?? "")) },
   { key: "location", label: "Location", width: "w-48" },
   { key: "since",    label: "Since",    width: "w-28" },
 ];
 
 const ACTIVITY_COLS: ColumnDef[] = [
-  { key: "time",      label: "Time",       width: "w-28" },
-  { key: "actor",     label: "User",       width: "w-40" },
-  { key: "eventType", label: "Event",      width: "w-36" },
-  { key: "entity",    label: "Equipment",  width: "w-full" },
+  { key: "time",      label: "Time",      width: "w-28" },
+  { key: "actor",     label: "User",      width: "w-40" },
+  { key: "eventType", label: "Event",     width: "w-40" },
+  { key: "entity",    label: "Equipment", width: "w-full" },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────
