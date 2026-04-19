@@ -395,41 +395,51 @@ export default function GenerateLabelsPage() {
                     <Info className="h-4 w-4 text-brand-blue" />
                     How this works
                   </h3>
-                  {hasNativeFormat ? (
+
+                  {currentPrinter?.outputFormat === "dymo_xml" && outputFormat === "native" ? (
+                    <>
+                      <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
+                        <li>Click Generate — you&apos;ll get a ZIP with a label template + serials.csv.</li>
+                        <li>Unzip it anywhere on your computer.</li>
+                        <li>Double-click <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">labels.label</code> — DYMO Connect opens the template.</li>
+                        <li>In DYMO Connect, click <span className="font-semibold">File → Import Data and Print</span>.</li>
+                        <li>Pick <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">serials.csv</code> from the same folder.</li>
+                        <li>Map the &quot;Serial&quot; column to the QR and Serial fields, &quot;OrgName&quot; to OrgName.</li>
+                        <li>Hit Print — DYMO Connect prints every serial as its own label.</li>
+                        <li>Stick them on your kit, then scan each one via Add Equipment.</li>
+                      </ol>
+                      <p className="text-[11px] text-grey mt-3 pt-3 border-t border-brand-blue/10">
+                        Needs <a href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">DYMO Connect</a> installed (free from DYMO). The README inside the ZIP has the same instructions.
+                      </p>
+                    </>
+                  ) : (printer === "brother_ql" || printer === "brother_pt") && outputFormat === "native" ? (
+                    <>
+                      <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
+                        <li>Click Generate — you&apos;ll get a ZIP with a label template + serials.csv.</li>
+                        <li>Unzip it anywhere on your computer.</li>
+                        <li>Double-click <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">labels.lbx</code> — P-touch Editor opens the template.</li>
+                        <li>In P-touch Editor, import <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">serials.csv</code> as the data source.</li>
+                        <li>Hit Print — every serial prints as its own label.</li>
+                        <li>Stick them on your kit, then scan each one via Add Equipment.</li>
+                      </ol>
+                      <p className="text-[11px] text-grey mt-3 pt-3 border-t border-brand-blue/10">
+                        Needs <a href="https://www.brother.co.uk/support/downloads" target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">P-touch Editor 5+</a> installed (free from Brother).
+                      </p>
+                    </>
+                  ) : currentPrinter?.outputFormat === "zpl" && outputFormat === "native" ? (
                     <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
-                      <li>Click Generate — you&apos;ll get a ZIP file with the label design + serials CSV.</li>
-                      <li>Unzip it anywhere on your computer.</li>
-                      <li>
-                        Double-click the{" "}
-                        {printer === "brother_ql" || printer === "brother_pt"
-                          ? <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.lbx</code>
-                          : currentPrinter?.outputFormat === "dymo_xml"
-                          ? <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.label</code>
-                          : <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.zpl</code>
-                        }
-                        {" "}file. Your label software opens with every serial ready to go.
-                      </li>
-                      <li>Hit Print in the label software. Labels come out.</li>
-                      <li>Stick them on your kit, then scan each one via Add Equipment to register it.</li>
+                      <li>Click Generate — you&apos;ll get a single <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.zpl</code> file.</li>
+                      <li>Send it to your Zebra printer (drag-drop in your spooler, or pipe over TCP to port 9100).</li>
+                      <li>Labels come out. Stick them on kit, scan via Add Equipment.</li>
                     </ol>
                   ) : (
                     <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
                       <li>Click Generate — a PDF opens in a new tab.</li>
                       <li>Press Cmd/Ctrl+P to open your print dialog.</li>
                       <li>Pick your label printer from the list.</li>
-                      <li>Make sure paper size matches ({currentSize?.widthMm} × {currentSize?.heightMm}mm) — most drivers pick this automatically.</li>
-                      <li>Hit Print. Stick labels on kit, then scan via Add Equipment.</li>
+                      <li>Paper size should be {currentSize?.widthMm} × {currentSize?.heightMm}mm — most drivers pick this automatically.</li>
+                      <li>Hit Print. Stick labels on kit, scan via Add Equipment.</li>
                     </ol>
-                  )}
-                  {(printer === "brother_ql" || printer === "brother_pt") && outputFormat === "native" && (
-                    <p className="text-[11px] text-grey mt-3 pt-3 border-t border-brand-blue/10">
-                      Needs <a href="https://www.brother.co.uk/support/downloads" target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">P-touch Editor 5+</a> installed (free from Brother).
-                    </p>
-                  )}
-                  {currentPrinter?.outputFormat === "dymo_xml" && outputFormat === "native" && (
-                    <p className="text-[11px] text-grey mt-3 pt-3 border-t border-brand-blue/10">
-                      Needs <a href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">DYMO Connect</a> installed (free from DYMO).
-                    </p>
                   )}
                 </div>
               </section>
