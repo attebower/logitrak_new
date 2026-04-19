@@ -12,7 +12,7 @@
 
 import { useState } from "react";
 import {
-  Plus, Film, Zap, Calendar, ChevronDown, Building2,
+  Plus, Film, Zap, Building2,
   MapPin, Layers, Package, X, ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -547,42 +547,80 @@ function ProjectDetail({
     onSuccess: () => void utils.project.sets.list.invalidate({ projectId }),
   });
 
+  const updateStatus = trpc.project.updateStatus.useMutation({
+    onSuccess: () => void utils.project.list.invalidate(),
+  });
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+
   if (!project) {
     return <div className="p-8 text-[13px] text-slate-400">Loading…</div>;
   }
 
   const type = project.industryType as "film_tv" | "events";
 
+  function fmtDate(d: Date | string | null | undefined) {
+    if (!d) return null;
+    return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  const projStatus = project.status as ProjectStatus;
+
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      {/* Project header */}
-      <div className="flex items-start gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-brand-blue/10 flex items-center justify-center shrink-0 mt-0.5">
-          {type === "film_tv"
-            ? <Film size={18} className="text-brand-blue" />
-            : <Zap  size={18} className="text-brand-blue" />}
-        </div>
-        <div>
-          <h1 className="text-[20px] font-bold text-surface-dark leading-tight">{project.name}</h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
-            <span className="text-[12px] text-slate-400">
-              {type === "film_tv" ? "Film & TV" : "Events"}
-            </span>
-            {project.studio && (
-              <span className="flex items-center gap-1 text-[12px] text-slate-400">
-                <Building2 size={11} /> {project.studio.name}
-              </span>
-            )}
-            {project.eventLocation && (
-              <span className="flex items-center gap-1 text-[12px] text-slate-400">
-                <Building2 size={11} /> {project.eventLocation}
-              </span>
+      {/* Project header — compact single row, then metadata + description */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between gap-4 mb-2">
+          <h1 className="text-[18px] font-semibold text-surface-dark leading-tight">{project.name}</h1>
+          <div className="relative">
+            <button
+              onClick={() => setShowStatusMenu((v) => !v)}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold",
+                STATUS_STYLES[projStatus]
+              )}
+            >
+              {STATUS_LABELS[projStatus]}
+            </button>
+            {showStatusMenu && (
+              <div className="absolute right-0 top-8 z-10 bg-white border border-grey-mid rounded-panel shadow-md py-1 w-32">
+                {(["active", "wrapped", "archived"] as ProjectStatus[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      updateStatus.mutate({ workspaceId, projectId, status: s });
+                      setShowStatusMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-[12px] text-surface-dark hover:bg-grey-light"
+                  >
+                    {STATUS_LABELS[s]}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-          {project.description && (
-            <p className="text-[12px] text-slate-500 mt-1">{project.description}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-500">
+          <span className="flex items-center gap-1.5">
+            {type === "film_tv" ? <Film size={11} /> : <Zap size={11} />}
+            {type === "film_tv" ? "Film & TV" : "Events"}
+          </span>
+          {project.studio && (
+            <span className="flex items-center gap-1.5">
+              <Building2 size={11} /> {project.studio.name}
+            </span>
+          )}
+          {project.eventLocation && (
+            <span className="flex items-center gap-1.5">
+              <Building2 size={11} /> {project.eventLocation}
+            </span>
+          )}
+          {project.startDate && (
+            <span>Starts {fmtDate(project.startDate)}</span>
           )}
         </div>
+        {project.description && (
+          <p className="text-[13px] text-surface-dark mt-3">{project.description}</p>
+        )}
       </div>
 
       {/* Sets section */}
@@ -645,7 +683,7 @@ function ProjectDetail({
                     {ps.stage.studio.name} — {ps.stage.name}
                   </p>
                   {ps.notes && (
-                    <p className="text-[11px] text-slate-400 italic mt-0.5">{ps.notes}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{ps.notes}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -727,18 +765,6 @@ export default function ProjectsPage() {
     { enabled: !!workspaceId }
   );
 
-  const utils = trpc.useUtils();
-  const updateStatus = trpc.project.updateStatus.useMutation({
-    onSuccess: () => void utils.project.list.invalidate(),
-  });
-
-  const [statusMenuId, setStatusMenuId] = useState<string | null>(null);
-
-  function fmt(d: Date | null) {
-    if (!d) return null;
-    return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  }
-
   return (
     <>
       <AppTopbar
@@ -774,69 +800,24 @@ export default function ProjectsPage() {
                 {projects.map((p) => {
                   const isActive = selectedId === p.id;
                   const status   = p.status as ProjectStatus;
-                  const type     = p.industryType as IndustryType;
+                  // Small coloured dot per status — much quieter than a pill
+                  const dotColour =
+                    status === "active"  ? "bg-status-green" :
+                    status === "wrapped" ? "bg-slate-300"    :
+                                           "bg-slate-200";
                   return (
                     <li key={p.id}>
                       <button
                         onClick={() => setSelectedId(p.id)}
                         className={cn(
-                          "w-full text-left px-2 py-2.5 rounded-btn transition-colors group",
-                          isActive ? "bg-brand-blue/10" : "hover:bg-grey-light"
+                          "w-full flex items-center gap-2 px-2 py-1.5 rounded-btn text-[13px] transition-colors text-left",
+                          isActive
+                            ? "bg-brand-blue/10 text-brand-blue font-semibold"
+                            : "text-surface-dark hover:bg-grey-light"
                         )}
                       >
-                        <div className="flex items-start gap-2">
-                          <span className={cn("mt-0.5 shrink-0", isActive ? "text-brand-blue" : "text-slate-400")}>
-                            {type === "film_tv" ? <Film size={13} /> : <Zap size={13} />}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className={cn(
-                              "text-[13px] font-medium truncate leading-snug",
-                              isActive ? "text-brand-blue" : "text-surface-dark"
-                            )}>
-                              {p.name}
-                            </p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className={cn(
-                                "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold",
-                                STATUS_STYLES[status]
-                              )}>
-                                {STATUS_LABELS[status]}
-                              </span>
-                              {p.startDate && (
-                                <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
-                                  <Calendar size={9} />
-                                  {fmt(p.startDate)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {/* Status toggle — stop propagation so it doesn't select project */}
-                          <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => setStatusMenuId(statusMenuId === p.id ? null : p.id)}
-                              className="p-1 rounded text-slate-300 hover:text-slate-500 hover:bg-grey-light"
-                              title="Change status"
-                            >
-                              <ChevronDown size={11} />
-                            </button>
-                            {statusMenuId === p.id && (
-                              <div className="absolute right-0 top-6 z-20 bg-white border border-grey-mid rounded-panel shadow-md py-1 w-28">
-                                {(["active", "wrapped", "archived"] as ProjectStatus[]).map((s) => (
-                                  <button
-                                    key={s}
-                                    onClick={() => {
-                                      updateStatus.mutate({ workspaceId: workspaceId!, projectId: p.id, status: s });
-                                      setStatusMenuId(null);
-                                    }}
-                                    className="w-full text-left px-3 py-1.5 text-[12px] text-surface-dark hover:bg-grey-light"
-                                  >
-                                    {STATUS_LABELS[s]}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", dotColour)} />
+                        <span className="truncate flex-1">{p.name}</span>
                       </button>
                     </li>
                   );
