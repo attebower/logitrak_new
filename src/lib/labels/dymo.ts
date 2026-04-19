@@ -21,29 +21,35 @@ import { formatSerial, type LabelSize, type CodeType } from "./catalog";
 const MM_TO_TWIPS = 56.69;
 
 /**
- * Confirmed-working DYMO label SKUs. Width/Height values below are in
- * **portrait order** (short × long) — that's what DYMO Connect expects in
- * <RoundRectangle> even when orientation is Landscape.
+ * Confirmed-working DYMO label SKUs.
+ *
+ * CRITICAL RULE FOR LANDSCAPE LABELS:
+ *   Width  = LONG edge (big number)
+ *   Height = SHORT edge (small number)
+ *
+ * If Height > Width for a landscape label, they're swapped and the file
+ * will be rejected as invalid. This trips up every single time — always
+ * check that widthTwips > heightTwips for a landscape SKU.
  */
 interface DymoSku {
   paperName: string;
   id: string;
-  shortTwips: number;  // Goes in RoundRectangle Width
-  longTwips: number;   // Goes in RoundRectangle Height
+  widthTwips: number;   // Goes in RoundRectangle Width  — LONG edge for landscape
+  heightTwips: number;  // Goes in RoundRectangle Height — SHORT edge for landscape
   orientation: "Landscape" | "Portrait";
 }
 
 const DYMO_SKUS: Record<string, DymoSku> = {
-  // 30252 Address — 89 × 28mm
-  "30252": { paperName: "30252 Address",       id: "Address",       shortTwips: 1581, longTwips: 5040, orientation: "Landscape" },
-  // 30334 Multi-Purpose — 57 × 32mm (our catalog); spec lists 60×20mm for this SKU
-  "30334": { paperName: "30334 Multi-Purpose", id: "MultiPurpose",  shortTwips: 1814, longTwips: 3231, orientation: "Landscape" },
-  // 30256 Shipping — 101 × 59mm
-  "30256": { paperName: "30256 Shipping",      id: "LargeShipping", shortTwips: 3331, longTwips: 5715, orientation: "Landscape" },
-  // 30321 Large Address — 89 × 36mm
-  "30321": { paperName: "30321 Large Address", id: "LargeAddress",  shortTwips: 2025, longTwips: 5020, orientation: "Landscape" },
-  // 11355 Multi-Purpose — 51 × 19mm
-  "11355": { paperName: "11355 Multi-Purpose", id: "MultiPurpose2", shortTwips: 2268, longTwips: 3402, orientation: "Landscape" },
+  // 30252 Address — 89 × 28mm landscape
+  "30252": { paperName: "30252 Address",       id: "Address",       widthTwips: 5040, heightTwips: 1581, orientation: "Landscape" },
+  // 30334 Multi-Purpose — 57 × 32mm landscape
+  "30334": { paperName: "30334 Multi-Purpose", id: "MultiPurpose",  widthTwips: 3231, heightTwips: 1814, orientation: "Landscape" },
+  // 30256 Shipping — 101 × 59mm landscape
+  "30256": { paperName: "30256 Shipping",      id: "LargeShipping", widthTwips: 5715, heightTwips: 3331, orientation: "Landscape" },
+  // 30321 Large Address — 89 × 36mm landscape
+  "30321": { paperName: "30321 Large Address", id: "LargeAddress",  widthTwips: 5020, heightTwips: 2025, orientation: "Landscape" },
+  // 11355 Multi-Purpose — 51 × 19mm landscape
+  "11355": { paperName: "11355 Multi-Purpose", id: "MultiPurpose2", widthTwips: 3402, heightTwips: 2268, orientation: "Landscape" },
 };
 
 function skuFor(size: LabelSize): DymoSku {
@@ -84,87 +90,78 @@ export function buildDymoLabel(args: DymoArgs): string {
   const barcodeType = codeType === "qr" ? "QRCode" : "Code128Auto";
   const barcodeData = placeholderSerial;
 
-  // Object layout matches the confirmed working example from the schema reference.
-  // Coordinates are in twips, relative to the printable area.
-  // For 30252 (1581 × 5040 twips), this is the "portrait" layout from the spec.
-  const isAddress = size.id === "30252";
+  // Layout is built in the actual canvas orientation (landscape = wide).
+  // Structure: code on the LEFT, serial + org stacked on the RIGHT.
+  const w = sku.widthTwips;   // long edge for landscape
+  const h = sku.heightTwips;  // short edge for landscape
 
-  let objects: string;
-  if (isAddress) {
-    // Exact layout from the confirmed-working reference file for 30252
-    objects = [
-      barcodeBlock({
-        name: codeType === "qr" ? "QRCode" : "Barcode",
-        type: barcodeType,
-        data: barcodeData,
-        x: 331, y: 150, width: 900, height: 900,
-        textPosition: codeType === "qr" ? "None" : "Bottom",
-      }),
-      textBlock({
-        name: "Serial",
-        text: placeholderSerial,
-        x: 150, y: 1080, width: 1260, height: 280,
-        font: "Courier New", size: 18, bold: true,
-        color: { r: 0, g: 0, b: 0 },
-      }),
-      textBlock({
-        name: "OrgName",
-        text: orgName.toUpperCase(),
-        x: 150, y: 1370, width: 1260, height: 180,
-        font: "Arial", size: 9,
-        color: { r: 120, g: 120, b: 120 },
-      }),
-    ].join("\n");
-  } else {
-    // Scale layout proportionally to other label sizes
-    const w = sku.shortTwips;
-    const h = sku.longTwips;
-    const codeSize = Math.round(Math.min(w * 0.6, h * 0.18));
-    const codeX = Math.round((w - codeSize) / 2);
-    const codeY = Math.round(h * 0.03);
-    const serialY = codeY + codeSize + Math.round(h * 0.03);
-    const serialH = Math.round(h * 0.05);
-    const orgY = Math.round(h * 0.87);
-    const orgH = Math.round(h * 0.05);
-    const textMargin = Math.round(w * 0.05);
-    objects = [
-      barcodeBlock({
-        name: codeType === "qr" ? "QRCode" : "Barcode",
-        type: barcodeType,
-        data: barcodeData,
-        x: codeX, y: codeY, width: codeSize, height: codeSize,
-        textPosition: codeType === "qr" ? "None" : "Bottom",
-      }),
-      textBlock({
-        name: "Serial",
-        text: placeholderSerial,
-        x: textMargin, y: serialY, width: w - textMargin * 2, height: serialH,
-        font: "Courier New", size: 18, bold: true,
-        color: { r: 0, g: 0, b: 0 },
-      }),
-      textBlock({
-        name: "OrgName",
-        text: orgName.toUpperCase(),
-        x: textMargin, y: orgY, width: w - textMargin * 2, height: orgH,
-        font: "Arial", size: 9,
-        color: { r: 120, g: 120, b: 120 },
-      }),
-    ].join("\n");
-  }
+  const padding = Math.round(h * 0.08);
+  const codeSize = Math.min(h - padding * 2, Math.round(w * 0.25));
+  const codeX = padding;
+  const codeY = Math.round((h - codeSize) / 2);
 
-  // NOTE: RoundRectangle uses portrait dimension order — Width is the short
-  // edge, Height is the long edge, EVEN when orientation is Landscape.
-  // Swapping these causes "invalid file" errors in DYMO Connect.
+  const textX = codeX + codeSize + padding;
+  const textW = w - textX - padding;
+  const serialY = Math.round(h * 0.12);
+  const serialH = Math.round(h * 0.48);
+  const orgY = Math.round(h * 0.62);
+  const orgH = Math.round(h * 0.28);
+
+  // For barcode_focus we'd use a very different layout, but phase 1 uses
+  // one shared layout for DYMO regardless of design choice
+  const objects = [
+    barcodeBlock({
+      name: codeType === "qr" ? "QRCode" : "Barcode",
+      type: barcodeType,
+      data: barcodeData,
+      x: codeX, y: codeY,
+      width: codeType === "qr" ? codeSize : Math.round(codeSize * 1.5),
+      height: codeSize,
+      textPosition: codeType === "qr" ? "None" : "Bottom",
+    }),
+    textBlock({
+      name: "Serial",
+      text: placeholderSerial,
+      x: textX, y: serialY, width: textW, height: serialH,
+      font: "Courier New",
+      size: fontSizeFor(h, 0.5),  // scales with label height
+      bold: true,
+      color: { r: 0, g: 0, b: 0 },
+      align: "Left",
+    }),
+    textBlock({
+      name: "OrgName",
+      text: orgName.toUpperCase(),
+      x: textX, y: orgY, width: textW, height: orgH,
+      font: "Arial",
+      size: fontSizeFor(h, 0.22),
+      color: { r: 120, g: 120, b: 120 },
+      align: "Left",
+    }),
+  ].join("\n");
+
+  // RoundRectangle: Width = LONG edge, Height = SHORT edge for landscape.
+  // This always matches the physical canvas orientation.
   return `<?xml version="1.0" encoding="utf-8"?>
 <DieCutLabel Version="8.0" Units="twips">
   <PaperOrientation>${sku.orientation}</PaperOrientation>
   <Id>${sku.id}</Id>
   <PaperName>${esc(sku.paperName)}</PaperName>
   <DrawCommands>
-    <RoundRectangle X="0" Y="0" Width="${sku.shortTwips}" Height="${sku.longTwips}" Rx="270" Ry="270" />
+    <RoundRectangle X="0" Y="0" Width="${sku.widthTwips}" Height="${sku.heightTwips}" Rx="270" Ry="270" />
   </DrawCommands>
 ${objects}
 </DieCutLabel>`;
+}
+
+/**
+ * Pick a font point size that reads well in a given label height.
+ * `frac` is the fraction of the label height the text should target.
+ * 1 twip = 1/1440 inch, 1 pt = 1/72 inch, so 1 pt = 20 twips.
+ */
+function fontSizeFor(labelHeightTwips: number, frac: number): number {
+  const pts = Math.round((labelHeightTwips * frac) / 20);
+  return Math.max(7, Math.min(48, pts));
 }
 
 // ── Object block builders ─────────────────────────────────────────────────
