@@ -13,7 +13,7 @@
 import { useState } from "react";
 import {
   Plus, Film, Zap, Calendar, ChevronDown, Building2,
-  MapPin, Layers, Package, X, ChevronRight, FileDown,
+  MapPin, Layers, Package, X, ChevronRight, FileDown, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppTopbar } from "@/components/shared/AppTopbar";
@@ -283,6 +283,156 @@ function NewProjectModal({
 }
 
 // ── Add Set Modal ─────────────────────────────────────────────────────────
+
+function EditSetModal({
+  projectId,
+  workspaceId,
+  projectSetId,
+  initial,
+  onClose,
+}: {
+  projectId:    string;
+  workspaceId:  string;
+  projectSetId: string;
+  initial: {
+    setName:  string;
+    stageId:  string;
+    studioId: string;
+    notes:    string;
+  };
+  onClose: () => void;
+}) {
+  const utils = trpc.useUtils();
+
+  const [studioId, setStudioId] = useState(initial.studioId);
+  const [stageId,  setStageId]  = useState(initial.stageId);
+  const [setName,  setSetName]  = useState(initial.setName);
+  const [notes,    setNotes]    = useState(initial.notes);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const { data: studios } = trpc.location.studio.list.useQuery({ workspaceId });
+  const { data: stages }  = trpc.location.stage.list.useQuery(
+    { workspaceId, studioId },
+    { enabled: !!studioId }
+  );
+
+  const update = trpc.project.sets.update.useMutation({
+    onSuccess: () => {
+      void utils.project.sets.list.invalidate({ projectId });
+      onClose();
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!stageId)        { setError("Please select a stage."); return; }
+    if (!setName.trim()) { setError("Set name is required."); return; }
+    update.mutate({
+      workspaceId,
+      projectSetId,
+      setName: setName.trim(),
+      stageId,
+      notes:   notes.trim() || undefined,
+    });
+  }
+
+  const inputCls = "w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue";
+  const nameChanged  = setName.trim() !== initial.setName;
+  const stageChanged = stageId !== initial.stageId;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
+      <div className="w-full max-w-md bg-white rounded-panel border border-grey-mid shadow-lg">
+        <div className="px-6 py-5 border-b border-grey-mid flex items-center justify-between">
+          <div>
+            <h2 className="text-[16px] font-bold text-surface-dark">Edit Set</h2>
+            <p className="text-[13px] text-slate-500 mt-0.5">Rename, move to a different stage, or update notes.</p>
+          </div>
+          <button onClick={onClose} className="text-grey hover:text-surface-dark">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Set Name <span className="text-status-red">*</span>
+            </label>
+            <input
+              type="text" autoFocus value={setName}
+              onChange={(e) => setSetName(e.target.value)}
+              placeholder="e.g. Throne Room, Ext. Village, Studio B"
+              className={inputCls}
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Studio / Venue
+            </label>
+            <select
+              value={studioId}
+              onChange={(e) => { setStudioId(e.target.value); setStageId(""); }}
+              className={inputCls}
+            >
+              <option value="">Select studio…</option>
+              {(studios ?? []).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Stage / Area <span className="text-status-red">*</span>
+            </label>
+            <select
+              value={stageId}
+              onChange={(e) => setStageId(e.target.value)}
+              disabled={!studioId}
+              className={cn(inputCls, !studioId && "opacity-40 cursor-not-allowed")}
+            >
+              <option value="">Select stage…</option>
+              {(stages ?? []).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Notes <span className="text-slate-400 font-normal normal-case">(optional)</span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Hero set, practical lighting rig"
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+
+          {(nameChanged || stageChanged) && setName.trim() && stageId && (
+            <p className="text-[11px] text-slate-500 bg-grey-light border border-grey-mid rounded-btn px-3 py-2">
+              Renaming or moving the set will re-link this project to a different set. Other projects using the original set won&apos;t be affected.
+            </p>
+          )}
+
+          {error && <p className="text-[12px] text-status-red">{error}</p>}
+
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={update.isPending}>
+              {update.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 function AddSetModal({
   projectId,
@@ -987,6 +1137,13 @@ function ProjectDetail({
     setName:      string;
     stageName:    string;
   } | null>(null);
+  const [editingSet, setEditingSet] = useState<{
+    projectSetId: string;
+    setName:      string;
+    stageId:      string;
+    studioId:     string;
+    notes:        string;
+  } | null>(null);
 
   const { data: projects } = trpc.project.list.useQuery({ workspaceId });
   const project = projects?.find((p) => p.id === projectId);
@@ -1173,16 +1330,36 @@ function ProjectDetail({
                   </span>
                   <ChevronRight size={14} className="text-slate-300 group-hover:text-brand-blue transition-colors" />
                   {isManager && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeSet.mutate({ workspaceId, projectSetId: ps.id });
-                      }}
-                      className="p-1 rounded text-slate-300 hover:text-status-red hover:bg-status-red/5 transition-colors"
-                      title="Remove set from project"
-                    >
-                      <X size={13} />
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingSet({
+                            projectSetId: ps.id,
+                            setName:      ps.set.name,
+                            stageId:      ps.stage.id,
+                            studioId:     ps.stage.studio.id,
+                            notes:        ps.notes ?? "",
+                          });
+                        }}
+                        className="p-1 rounded text-slate-300 hover:text-brand-blue hover:bg-brand-blue/5 transition-colors"
+                        title="Edit set"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Remove "${ps.set.name}" from this project?`)) {
+                            removeSet.mutate({ workspaceId, projectSetId: ps.id });
+                          }
+                        }}
+                        className="p-1 rounded text-slate-300 hover:text-status-red hover:bg-status-red/5 transition-colors"
+                        title="Remove set from project"
+                      >
+                        <X size={13} />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -1197,6 +1374,21 @@ function ProjectDetail({
           workspaceId={workspaceId}
           projectStudioId={project.studio?.id ?? null}
           onClose={() => setShowAddSet(false)}
+        />
+      )}
+
+      {editingSet && (
+        <EditSetModal
+          projectId={projectId}
+          workspaceId={workspaceId}
+          projectSetId={editingSet.projectSetId}
+          initial={{
+            setName:  editingSet.setName,
+            stageId:  editingSet.stageId,
+            studioId: editingSet.studioId,
+            notes:    editingSet.notes,
+          }}
+          onClose={() => setEditingSet(null)}
         />
       )}
 

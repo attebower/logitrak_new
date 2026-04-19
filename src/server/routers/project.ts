@@ -146,6 +146,84 @@ export const projectRouter = router({
         });
       }),
 
+    // Update set info in the context of this ProjectSet.
+    // Matt's semantics: editing "this set" on this project should feel like
+    // it edits this project's view. So:
+    //   - notes: updated on ProjectSet (always project-scoped)
+    //   - stageId + setName: resolved to a Set on that stage (created if
+    //     new) and the ProjectSet is re-pointed. The original Set stays
+    //     intact so other projects using it are unaffected.
+    update: workspaceProcedure
+      .input(z.object({
+        workspaceId:  z.string(),
+        projectSetId: z.string(),
+        setName:      z.string().min(1).max(100),
+        stageId:      z.string(),
+        notes:        z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!MANAGER_ROLES.includes(ctx.userRole!)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Manager or above required" });
+        }
+
+        const ps = await ctx.prisma.projectSet.findFirst({
+          where: { id: input.projectSetId, workspaceId: ctx.workspaceId! },
+          include: { set: true },
+        });
+        if (!ps) throw new TRPCError({ code: "NOT_FOUND", message: "Project set not found" });
+
+        // Verify the stage belongs to this workspace
+        const stage = await ctx.prisma.stage.findFirst({
+          where: { id: input.stageId, studio: { workspaceId: ctx.workspaceId! } },
+        });
+        if (!stage) throw new TRPCError({ code: "NOT_FOUND", message: "Stage not found" });
+
+        // Resolve target Set: either existing on that stage, or a new one
+        let targetSet = await ctx.prisma.set.findUnique({
+          where: { stageId_name: { stageId: input.stageId, name: input.setName.trim() } },
+        });
+        if (!targetSet) {
+          targetSet = await ctx.prisma.set.create({
+            data: {
+              workspaceId: ctx.workspaceId!,
+              stageId:     input.stageId,
+              name:        input.setName.trim(),
+            },
+          });
+        }
+
+        // Prevent collision: another ProjectSet on this project already
+        // pointing at the resolved set
+        if (targetSet.id !== ps.setId) {
+          const collision = await ctx.prisma.projectSet.findFirst({
+            where: {
+              projectId: ps.projectId,
+              setId:     targetSet.id,
+              id:        { not: ps.id },
+            },
+          });
+          if (collision) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `"${input.setName}" is already on this project.`,
+            });
+          }
+        }
+
+        return ctx.prisma.projectSet.update({
+          where: { id: ps.id },
+          data: {
+            setId:   targetSet.id,
+            stageId: input.stageId,
+            notes:   input.notes?.trim() ? input.notes.trim() : null,
+          },
+          include: {
+            set:   { select: { id: true, name: true, description: true } },
+            stage: { select: { id: true, name: true, studio: { select: { id: true, name: true } } } },
+          },
+        });
+      }),
+
     // Equipment currently on a set within this project — latest check event per item
     equipment: workspaceProcedure
       .input(z.object({ workspaceId: z.string(), projectId: z.string(), setId: z.string() }))
