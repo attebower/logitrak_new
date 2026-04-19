@@ -578,7 +578,7 @@ function ScanPanel({
   }, [scanSearch]);
 
   return (
-    <div className="bg-white rounded-card border border-grey-mid border-l-4 border-l-brand-blue overflow-hidden">
+    <div className="bg-white rounded-card border border-grey-mid border-x-4 border-x-brand-blue overflow-hidden">
       <div className="px-5 py-3.5 border-b border-grey-mid">
         <h2 className="text-[13px] font-semibold text-surface-dark">
           {tab === "out" ? "Check Out" : "Check In"}
