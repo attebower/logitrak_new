@@ -211,14 +211,25 @@ export async function GET(req: Request) {
       })),
     });
 
-    const filename = `${ps.project.name} — ${ps.set.name} snapshot.pdf`
+    // Headers must be ASCII. Build an ASCII-only filename + a
+    // UTF-8 filename* per RFC 5987 so browsers still show the nice
+    // Unicode name on download.
+    const unicodeName = `${ps.project.name} — ${ps.set.name} snapshot.pdf`
       .replace(/[/\\?%*:|"<>]/g, "-");
+    const asciiName = unicodeName
+      .normalize("NFKD")
+      .replace(/[^\x20-\x7E]/g, "-")
+      .replace(/-+/g, "-")
+      .trim() || "snapshot.pdf";
+
+    const disposition =
+      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(unicodeName)}`;
 
     return new Response(buffer as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": disposition,
         "Cache-Control": "no-store",
       },
     });
