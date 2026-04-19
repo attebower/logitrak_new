@@ -584,8 +584,11 @@ function ScanPanel({
           {tab === "out" ? "Check Out" : "Check In"}
         </h2>
       </div>
-      <div className="p-5 space-y-4">
-        <div className="lg:hidden">
+      <div className="p-5">
+        {/* Mobile-only scanner. On desktop it's hidden and, because it's
+            the only sibling before the input, we avoid a stray space-y
+            gap by using mb-* inside the mobile wrapper instead. */}
+        <div className="lg:hidden mb-4">
           <ScanArea onScan={onScan} onManualEntry={onScan} />
         </div>
         <div>
@@ -613,7 +616,11 @@ function ScanPanel({
           </div>
         </div>
 
-        <ScanWarningList warnings={warnings} onDismiss={onDismissWarning} />
+        {warnings.length > 0 && (
+          <div className="mt-4">
+            <ScanWarningList warnings={warnings} onDismiss={onDismissWarning} />
+          </div>
+        )}
       </div>
     </div>
   );
