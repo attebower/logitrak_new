@@ -10,7 +10,7 @@
  * Single bottom CTA confirms the action.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { ScanArea } from "@/components/shared/ScanArea";
 import { LocationPicker } from "@/components/shared/LocationPicker";
@@ -554,6 +554,27 @@ function ScanPanel({
   warnings: ScanWarning[];
   onDismissWarning: (s: string) => void;
 }) {
+  // Focus on mount only, never steal focus while the user is typing
+  // in another input (fixes the 'focus jumps back' bug).
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Re-focus the scanner after a successful 5-digit entry clears the
+  // field, but not on arbitrary re-renders.
+  const prevLen = useRef(scanSearch.length);
+  useEffect(() => {
+    // Only refocus when the field went from full (5) to empty after a
+    // scan, and only if nothing else is currently focused.
+    if (prevLen.current === 5 && scanSearch.length === 0) {
+      const active = document.activeElement as HTMLElement | null;
+      const shouldSteal = !active
+        || active === document.body
+        || active === inputRef.current;
+      if (shouldSteal) inputRef.current?.focus();
+    }
+    prevLen.current = scanSearch.length;
+  }, [scanSearch]);
+
   return (
     <div className="bg-white rounded-card border border-grey-mid border-l-4 border-l-brand-blue overflow-hidden">
       <div className="px-5 py-3.5 border-b border-grey-mid">
@@ -563,27 +584,29 @@ function ScanPanel({
         <div className="lg:hidden">
           <ScanArea onScan={onScan} onManualEntry={onScan} />
         </div>
-        <div className="relative">
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="Type or scan serial (5 digits)…"
-            value={scanSearch}
-            onChange={(e) => {
-              const v = e.target.value.replace(/\D/g, "").slice(0, 5);
-              setScanSearch(v);
-              if (v.length === 5) void onSerialComplete(v);
-            }}
-            ref={(el) => { if (el && document.activeElement !== el) el.focus(); }}
-            className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"
-            autoComplete="off"
-            autoFocus
-          />
-          {scanSearch.length > 0 && scanSearch.length < 5 && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-grey">
-              {5 - scanSearch.length} more
-            </span>
-          )}
+        <div>
+          <label className="block text-caption text-grey uppercase mb-1.5">Enter Serial</label>
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              inputMode="numeric"
+              placeholder="Type or scan serial (5 digits)…"
+              value={scanSearch}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "").slice(0, 5);
+                setScanSearch(v);
+                if (v.length === 5) void onSerialComplete(v);
+              }}
+              className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"
+              autoComplete="off"
+            />
+            {scanSearch.length > 0 && scanSearch.length < 5 && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-grey">
+                {5 - scanSearch.length} more
+              </span>
+            )}
+          </div>
         </div>
 
         <ScanWarningList warnings={warnings} onDismiss={onDismissWarning} />

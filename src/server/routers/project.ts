@@ -325,7 +325,9 @@ export const projectRouter = router({
           }
         }
 
-        return ctx.prisma.projectSet.update({
+        const previousSetId = ps.setId;
+
+        const updated = await ctx.prisma.projectSet.update({
           where: { id: ps.id },
           data: {
             setId:        targetSet.id,
@@ -339,6 +341,25 @@ export const projectRouter = router({
             onLocation: { select: { id: true, name: true, description: true, address: true } },
           },
         });
+
+        // If the old Set is now orphaned (no ProjectSet references it and
+        // no CheckEvent points at it) clean it up so the dropdown doesn't
+        // keep the stale name.
+        if (previousSetId && previousSetId !== targetSet.id) {
+          const stillReferenced = await ctx.prisma.projectSet.findFirst({
+            where: { setId: previousSetId },
+            select: { id: true },
+          });
+          const hasCheckEvents = await ctx.prisma.checkEvent.findFirst({
+            where: { setId: previousSetId },
+            select: { id: true },
+          });
+          if (!stillReferenced && !hasCheckEvents) {
+            await ctx.prisma.set.delete({ where: { id: previousSetId } }).catch(() => {});
+          }
+        }
+
+        return updated;
       }),
 
     // Equipment currently on a set within this project — latest check event per item
