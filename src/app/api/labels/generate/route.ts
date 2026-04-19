@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     if (printer.outputFormat === "dymo_xml") {
       const zip = new JSZip();
-      zip.file("labels.label", buildDymoLabel(commonArgs));
+      zip.file("labels.dymo", buildDymoLabel(commonArgs));
       zip.file("serials.csv", buildSerialsCsv({
         serialStart: batch.serialStart,
         serialEnd: batch.serialEnd,

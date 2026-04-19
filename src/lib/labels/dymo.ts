@@ -1,16 +1,17 @@
 /**
- * DYMO .label file generator.
+ * DYMO .dymo file generator for DYMO Connect.
  *
- * DYMO uses an XML-based label format that DYMO Connect and DYMO Label v8
- * both open. We generate one label design with placeholder fields for
- * `Serial` and `OrgName`, then bundle it with a CSV so the DYMO software
- * can merge-print.
+ * DYMO Connect uses the DesktopLabel v1 / DYMOLabel v4 XML schema (inches,
+ * not the 1/20mm "twips" of the older DYMO Label v8 format). This template
+ * is based on a real file produced by DYMO Connect on macOS.
  *
- * Format reference: https://developers.dymo.com/ (legacy docs), and the
- * LabelWriter XML schema that ships with DYMO Connect.
+ * We emit the file with embedded data rows in <DataTable> — DYMO Connect
+ * shows a merge preview and prints each row as its own label.
  */
 
-import { formatSerial, type LabelDesign, type CodeType, type LabelSize } from "./catalog";
+import { formatSerial, type LabelSize, type CodeType, type LabelDesign } from "./catalog";
+
+const MM_TO_INCH = 1 / 25.4;
 
 export interface DymoArgs {
   serialStart: number;
@@ -21,149 +22,263 @@ export interface DymoArgs {
   size: LabelSize;
 }
 
-/**
- * Build a single DYMO .label file with placeholder <DataString/> on the
- * serial and org fields. DYMO Connect will prompt the user to assign the
- * CSV on first open, then merge-print every row.
- */
-export function buildDymoLabel(args: DymoArgs): string {
-  const { codeType, size, design } = args;
-
-  // DYMO uses 1/20 mm units for coordinates (twentieths of a mm)
-  const w = Math.round(size.widthMm * 20);
-  const h = Math.round(size.heightMm * 20);
-
-  // We build a generic design that works for all 5 layouts.
-  // For Phase 1 keep it simple: code on left, serial + org on right.
-  const codeSize = Math.min(h * 0.8, w * 0.4);
-  const codeX = 20 * 2;
-  const codeY = (h - codeSize) / 2;
-
-  const textX = codeX + codeSize + 40;
-  const textW = w - textX - 40;
-
-  const bcType = codeType === "qr" ? "QRCode" : "Code128Auto";
-
-  // DYMO Barcode element
-  const barcodeObj = `
-    <BarcodeObject>
-      <Name>SerialBarcode</Name>
-      <ForeColor Alpha="255" Red="15" Green="23" Blue="42"/>
-      <BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
-      <LinkedObjectName></LinkedObjectName>
-      <Rotation>Rotation0</Rotation>
-      <IsMirrored>False</IsMirrored>
-      <IsVariable>True</IsVariable>
-      <Text>00000</Text>
-      <Type>${bcType}</Type>
-      <Size>Medium</Size>
-      <TextPosition>None</TextPosition>
-      <TextFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False"/>
-      <CheckSumFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False"/>
-      <TextEmbedding>None</TextEmbedding>
-      <ECLevel>0</ECLevel>
-      <HorizontalAlignment>Center</HorizontalAlignment>
-      <VerticalAlignment>Middle</VerticalAlignment>
-    </BarcodeObject>`;
-
-  const serialTextObj = `
-    <TextObject>
-      <Name>SerialText</Name>
-      <ForeColor Alpha="255" Red="15" Green="23" Blue="42"/>
-      <BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
-      <LinkedObjectName></LinkedObjectName>
-      <Rotation>Rotation0</Rotation>
-      <IsMirrored>False</IsMirrored>
-      <IsVariable>True</IsVariable>
-      <HorizontalAlignment>Center</HorizontalAlignment>
-      <VerticalAlignment>Middle</VerticalAlignment>
-      <TextFitMode>ShrinkToFit</TextFitMode>
-      <UseFullFontHeight>True</UseFullFontHeight>
-      <Verticalized>False</Verticalized>
-      <StyledText>
-        <Element>
-          <String>00000</String>
-          <Attributes>
-            <Font Family="Courier New" Size="16" Bold="True" Italic="False" Underline="False" Strikeout="False"/>
-            <ForeColor Alpha="255" Red="15" Green="23" Blue="42"/>
-          </Attributes>
-        </Element>
-      </StyledText>
-    </TextObject>`;
-
-  const orgTextObj = `
-    <TextObject>
-      <Name>OrgName</Name>
-      <ForeColor Alpha="255" Red="71" Green="85" Blue="105"/>
-      <BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
-      <LinkedObjectName></LinkedObjectName>
-      <Rotation>Rotation0</Rotation>
-      <IsMirrored>False</IsMirrored>
-      <IsVariable>True</IsVariable>
-      <HorizontalAlignment>Center</HorizontalAlignment>
-      <VerticalAlignment>Middle</VerticalAlignment>
-      <TextFitMode>ShrinkToFit</TextFitMode>
-      <UseFullFontHeight>True</UseFullFontHeight>
-      <Verticalized>False</Verticalized>
-      <StyledText>
-        <Element>
-          <String>ORG NAME</String>
-          <Attributes>
-            <Font Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False"/>
-            <ForeColor Alpha="255" Red="71" Green="85" Blue="105"/>
-          </Attributes>
-        </Element>
-      </StyledText>
-    </TextObject>`;
-
-  // Build coordinate bounds for each object (X, Y, Width, Height in 1/20mm)
-  const barcodeBounds = `<Bounds X="${codeX}" Y="${codeY}" Width="${codeSize}" Height="${codeSize}"/>`;
-  const serialBounds = `<Bounds X="${textX}" Y="${h * 0.15}" Width="${textW}" Height="${h * 0.45}"/>`;
-  const orgBounds = `<Bounds X="${textX}" Y="${h * 0.65}" Width="${textW}" Height="${h * 0.25}"/>`;
-
-  // Design hint (used so I can vary layout per design later, keeping for now)
-  void design;
-
-  return `<?xml version="1.0" encoding="utf-8"?>
-<DieCutLabel Version="8.0" Units="twips">
-  <PaperOrientation>Landscape</PaperOrientation>
-  <Id>Custom</Id>
-  <PaperName>Custom Label</PaperName>
-  <DrawCommands>
-    <RoundRectangle X="0" Y="0" Width="${w}" Height="${h}" Rx="80" Ry="80"/>
-  </DrawCommands>
-  <ObjectInfo>
-    ${barcodeObj}
-    ${barcodeBounds}
-  </ObjectInfo>
-  <ObjectInfo>
-    ${serialTextObj}
-    ${serialBounds}
-  </ObjectInfo>
-  <ObjectInfo>
-    ${orgTextObj}
-    ${orgBounds}
-  </ObjectInfo>
-  <DataTable>
-    <DataTableName>LogiTrakSerials</DataTableName>
-    <HasHeaderRow>True</HasHeaderRow>
-    <Columns>
-      <Column>
-        <Name>Serial</Name>
-        <DataType>Text</DataType>
-      </Column>
-      <Column>
-        <Name>OrgName</Name>
-        <DataType>Text</DataType>
-      </Column>
-    </Columns>
-  </DataTable>
-</DieCutLabel>`;
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 /**
- * CSV with one row per label. DYMO Connect's "Import Data" feature maps
- * columns to placeholder objects automatically if names match.
+ * Build a single DYMO .dymo file sized to the given label. The layout is
+ * simple and consistent: barcode on the left, serial + org stacked on the right.
+ * Data rows are embedded directly (one row per serial) so the user just
+ * opens the file and prints — no separate CSV needed.
+ */
+export function buildDymoLabel(args: DymoArgs): string {
+  const { size, codeType, orgName, serialStart, serialEnd } = args;
+
+  // Whole label dimensions (inches, DYMO native unit)
+  const labelW = +(size.widthMm * MM_TO_INCH).toFixed(4);
+  const labelH = +(size.heightMm * MM_TO_INCH).toFixed(4);
+
+  // Safe inset so we don't draw right on the edge
+  const inset = 0.08;
+  const innerW = +(labelW - inset * 2).toFixed(4);
+  const innerH = +(labelH - inset * 2).toFixed(4);
+
+  // Barcode on the left, 80% of inner height, aspect 1:1 for QR, wider for 1D
+  const isQR = codeType === "qr";
+  const codeW = +(isQR ? Math.min(innerH * 0.95, innerW * 0.4) : innerW * 0.55).toFixed(4);
+  const codeH = +(innerH * 0.95).toFixed(4);
+  const codeX = +(inset + 0.04).toFixed(4);
+  const codeY = +(inset + (innerH - codeH) / 2).toFixed(4);
+
+  // Text block on the right
+  const textX = +(codeX + codeW + 0.08).toFixed(4);
+  const textW = +(labelW - textX - inset).toFixed(4);
+
+  // Serial text — upper 55% of text block
+  const serialY = +(inset + innerH * 0.08).toFixed(4);
+  const serialH = +(innerH * 0.5).toFixed(4);
+
+  // Org text — lower 35%
+  const orgY = +(inset + innerH * 0.62).toFixed(4);
+  const orgH = +(innerH * 0.3).toFixed(4);
+
+  const dataRows = buildDataRows({ serialStart, serialEnd, orgName });
+
+  const barcodeFormat = isQR ? "QRCode" : "Code128Auto";
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<DesktopLabel Version="1">
+  <DYMOLabel Version="4">
+    <Description>LogiTrak Labels</Description>
+    <Orientation>Landscape</Orientation>
+    <LabelName>LogiTrak_${size.widthMm}x${size.heightMm}</LabelName>
+    <InitialLength>0</InitialLength>
+    <BorderStyle>SolidLine</BorderStyle>
+    <DYMORect>
+      <DYMOPoint>
+        <X>0</X>
+        <Y>0</Y>
+      </DYMOPoint>
+      <Size>
+        <Width>${labelW}</Width>
+        <Height>${labelH}</Height>
+      </Size>
+    </DYMORect>
+    <BorderColor>
+      <SolidColorBrush>
+        <Color A="1" R="0" G="0" B="0"></Color>
+      </SolidColorBrush>
+    </BorderColor>
+    <BorderThickness>1</BorderThickness>
+    <Show_Border>False</Show_Border>
+    <HasFixedLength>False</HasFixedLength>
+    <FixedLengthValue>0</FixedLengthValue>
+    <DynamicLayoutManager>
+      <RotationBehavior>ClearObjects</RotationBehavior>
+      <LabelObjects>
+        <BarcodeObject>
+          <Name>Serial_Barcode</Name>
+          <Brushes>
+            <BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></BackgroundBrush>
+            <BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></BorderBrush>
+            <StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></StrokeBrush>
+            <FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0"/></Margin>
+          <BarcodeFormat>${barcodeFormat}</BarcodeFormat>
+          <Data>
+            <DataString>${formatSerial(serialStart)}</DataString>
+          </Data>
+          <HorizontalAlignment>Center</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <Size>Medium</Size>
+          <TextPosition>None</TextPosition>
+          <TextFont>
+            <FontName>Helvetica</FontName>
+            <FontSize>8</FontSize>
+            <IsBold>False</IsBold>
+            <IsItalic>False</IsItalic>
+            <IsUnderline>False</IsUnderline>
+            <FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></FontBrush>
+          </TextFont>
+          <CheckSumFont>
+            <FontName>Helvetica</FontName>
+            <FontSize>8</FontSize>
+            <IsBold>False</IsBold>
+            <IsItalic>False</IsItalic>
+            <IsUnderline>False</IsUnderline>
+            <FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></FontBrush>
+          </CheckSumFont>
+          <TextEmbedding>None</TextEmbedding>
+          <ECLevel>0</ECLevel>
+          <ObjectLayout>
+            <DYMOPoint><X>${codeX}</X><Y>${codeY}</Y></DYMOPoint>
+            <Size><Width>${codeW}</Width><Height>${codeH}</Height></Size>
+          </ObjectLayout>
+        </BarcodeObject>
+        <TextObject>
+          <Name>Serial_Text</Name>
+          <Brushes>
+            <BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></BackgroundBrush>
+            <BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></BorderBrush>
+            <StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></StrokeBrush>
+            <FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0"/></Margin>
+          <HorizontalAlignment>Center</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Center</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>${formatSerial(serialStart)}</Text>
+                <FontInfo>
+                  <FontName>Courier New</FontName>
+                  <FontSize>22</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush><SolidColorBrush><Color A="1" R="0.06" G="0.09" B="0.16"/></SolidColorBrush></FontBrush>
+                </FontInfo>
+              </TextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint><X>${textX}</X><Y>${serialY}</Y></DYMOPoint>
+            <Size><Width>${textW}</Width><Height>${serialH}</Height></Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>Org_Name</Name>
+          <Brushes>
+            <BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></BackgroundBrush>
+            <BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></BorderBrush>
+            <StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></StrokeBrush>
+            <FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0"/></Margin>
+          <HorizontalAlignment>Center</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Center</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>${esc(orgName.toUpperCase())}</Text>
+                <FontInfo>
+                  <FontName>Helvetica</FontName>
+                  <FontSize>10</FontSize>
+                  <IsBold>False</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush><SolidColorBrush><Color A="1" R="0.28" G="0.33" B="0.41"/></SolidColorBrush></FontBrush>
+                </FontInfo>
+              </TextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint><X>${textX}</X><Y>${orgY}</Y></DYMOPoint>
+            <Size><Width>${textW}</Width><Height>${orgH}</Height></Size>
+          </ObjectLayout>
+        </TextObject>
+      </LabelObjects>
+    </DynamicLayoutManager>
+  </DYMOLabel>
+  <LabelApplication>Blank</LabelApplication>
+  <DataTable>
+    <Columns>
+      <DataColumn>
+        <Name>Serial_Barcode</Name>
+        <DataColumnType>Text</DataColumnType>
+      </DataColumn>
+      <DataColumn>
+        <Name>Serial_Text</Name>
+        <DataColumnType>Text</DataColumnType>
+      </DataColumn>
+      <DataColumn>
+        <Name>Org_Name</Name>
+        <DataColumnType>Text</DataColumnType>
+      </DataColumn>
+    </Columns>
+    <Rows>
+${dataRows}
+    </Rows>
+  </DataTable>
+</DesktopLabel>`;
+}
+
+function buildDataRows(args: { serialStart: number; serialEnd: number; orgName: string }): string {
+  const rows: string[] = [];
+  for (let n = args.serialStart; n <= args.serialEnd; n++) {
+    const serial = formatSerial(n);
+    rows.push(`      <DataRow>
+        <DataCell>
+          <Name>Serial_Barcode</Name>
+          <CellValue>${esc(serial)}</CellValue>
+        </DataCell>
+        <DataCell>
+          <Name>Serial_Text</Name>
+          <CellValue>${esc(serial)}</CellValue>
+        </DataCell>
+        <DataCell>
+          <Name>Org_Name</Name>
+          <CellValue>${esc(args.orgName.toUpperCase())}</CellValue>
+        </DataCell>
+      </DataRow>`);
+  }
+  return rows.join("\n");
+}
+
+/**
+ * CSV with one row per label — kept as a fallback for users who'd rather
+ * import data manually (e.g. large batches or custom workflows).
  */
 export function buildSerialsCsv(args: { serialStart: number; serialEnd: number; orgName: string }): string {
   const rows = ["Serial,OrgName"];
@@ -178,9 +293,12 @@ export function buildDymoReadme(batchId: string): string {
 
 How to print:
 
-1. Double-click labels.label to open DYMO Connect (or DYMO Label v8).
-2. If prompted, point the data source at serials.csv (same folder).
-3. Check the preview looks right, then hit Print.
+1. Double-click labels.dymo to open DYMO Connect.
+2. Every serial is already embedded — DYMO Connect will show them all in the data panel.
+3. Hit Print.
+
+If DYMO Connect doesn't show the data rows, click the "Data" tab and
+import serials.csv from this folder.
 
 Batch ID: ${batchId}
 
