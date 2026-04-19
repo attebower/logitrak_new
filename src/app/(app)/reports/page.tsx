@@ -467,25 +467,39 @@ export default function ReportsPage() {
     <>
       <AppTopbar title="Reports" />
 
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Tab bar */}
-        <div className="bg-white border-b border-grey-mid px-6 flex gap-0">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={[
-                "px-4 py-3.5 text-[13px] font-medium border-b-2 transition-colors",
-                activeTab === tab.id
-                  ? "border-brand-blue text-brand-blue"
-                  : "border-transparent text-grey hover:text-surface-dark",
-              ].join(" ")}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex-1 overflow-hidden flex">
+        {/* Sub-sidebar — report sections */}
+        <aside className="w-[220px] shrink-0 bg-white border-r border-grey-mid overflow-y-auto">
+          <nav className="py-4 px-3 space-y-6">
+            <div>
+              <div className="px-2 mb-1.5 text-[10px] font-semibold text-grey uppercase tracking-wider">
+                Reports
+              </div>
+              <ul className="space-y-0.5">
+                {TABS.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <li key={tab.id}>
+                      <button
+                        onClick={() => setActiveTab(tab.id)}
+                        className={[
+                          "w-full text-left px-2 py-1.5 rounded-btn text-[13px] transition-colors",
+                          isActive
+                            ? "bg-brand-blue/10 text-brand-blue font-semibold"
+                            : "text-surface-dark hover:bg-grey-light",
+                        ].join(" ")}
+                      >
+                        {tab.label}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </nav>
+        </aside>
 
+        {/* Content column */}
         <div className="flex-1 overflow-y-auto p-6 pt-5 space-y-4">
           {/* Universal filter bar — applies to all table tabs */}
           {activeTab !== "overview" && (

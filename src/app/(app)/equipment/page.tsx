@@ -79,25 +79,9 @@ export default function EquipmentPage() {
     { enabled: !!detailId }
   );
 
-  const { data: categories } = trpc.category.list.useQuery({ workspaceId });
-
   // ── Mutations ────────────────────────────────────────────────────────────
 
   const importCsv = trpc.equipment.importCsv.useMutation();
-
-  const createEquipment = trpc.equipment.create.useMutation({
-    onSuccess: () => {
-      void refetch();
-      setShowAddForm(false);
-      setNewSerial("");
-      setNewName("");
-      setNewCategory("");
-      setAddError(null);
-    },
-    onError: (err) => {
-      setAddError(err.message);
-    },
-  });
 
   // ── Derived data ─────────────────────────────────────────────────────────
 
@@ -188,17 +172,6 @@ export default function EquipmentPage() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  function handleAddSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setAddError(null);
-    createEquipment.mutate({
-      workspaceId,
-      serial:     newSerial.trim(),
-      name:       newName.trim(),
-      categoryId: newCategory || undefined,
-    });
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -226,32 +199,44 @@ export default function EquipmentPage() {
         }
       />
 
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Filter tab bar — same style as Reports page */}
-        <div className="bg-white border-b border-grey-mid px-6 flex gap-0 overflow-x-auto">
-          {FILTER_TABS.map((tab) => {
-            const count = statusCounts[tab.id] ?? 0;
-            const isActive = statusFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setStatusFilter(tab.id)}
-                className={[
-                  "px-4 py-3.5 text-[13px] font-medium border-b-2 transition-colors whitespace-nowrap",
-                  isActive
-                    ? "border-brand-blue text-brand-blue"
-                    : "border-transparent text-grey hover:text-surface-dark",
-                ].join(" ")}
-              >
-                {tab.label}
-                <span className={`ml-1.5 text-[11px] ${isActive ? "text-brand-blue" : "text-grey"}`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+      <div className="flex-1 overflow-hidden flex">
+        {/* Sub-sidebar — status filter rail */}
+        <aside className="w-[220px] shrink-0 bg-white border-r border-grey-mid overflow-y-auto">
+          <nav className="py-4 px-3 space-y-6">
+            <div>
+              <div className="px-2 mb-1.5 text-[10px] font-semibold text-grey uppercase tracking-wider">
+                Status
+              </div>
+              <ul className="space-y-0.5">
+                {FILTER_TABS.map((tab) => {
+                  const count = statusCounts[tab.id] ?? 0;
+                  const isActive = statusFilter === tab.id;
+                  return (
+                    <li key={tab.id}>
+                      <button
+                        onClick={() => setStatusFilter(tab.id)}
+                        className={[
+                          "w-full flex items-center justify-between px-2 py-1.5 rounded-btn text-[13px] transition-colors text-left",
+                          isActive
+                            ? "bg-brand-blue/10 text-brand-blue font-semibold"
+                            : "text-surface-dark hover:bg-grey-light",
+                        ].join(" ")}
+                      >
+                        <span>{tab.label}</span>
+                        <span className={`text-[11px] ${isActive ? "text-brand-blue" : "text-grey"}`}>
+                          {count}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </nav>
+        </aside>
 
+        {/* Content column */}
+        <div className="flex-1 overflow-hidden flex flex-col">
         {/* Search */}
         <div className="px-6 py-4 bg-white border-b border-grey-mid">
           <input
@@ -262,59 +247,6 @@ export default function EquipmentPage() {
             className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
           />
         </div>
-
-        {/* Add equipment form — kept for backwards compatibility, now hidden */}
-        {showAddForm && (
-          <form onSubmit={handleAddSubmit} className="mx-6 mt-4 bg-white rounded-card border border-grey-mid p-5 hidden">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-[14px] font-semibold text-surface-dark">Add Equipment</h2>
-              <button type="button" onClick={() => setShowAddForm(false)} className="text-grey hover:text-surface-dark text-lg">×</button>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <FormInput
-                label="Serial (5 digits)"
-                required
-                pattern="\d{5}"
-                value={newSerial}
-                onChange={(e) => setNewSerial(e.target.value)}
-                placeholder="00001"
-              />
-              <FormInput
-                label="Equipment Name"
-                required
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. Arri SkyPanel S60-C"
-              />
-              <FormSelect
-                label="Category"
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-              >
-                <option value="">No category</option>
-                {categories?.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </FormSelect>
-            </div>
-            {addError && (
-              <p className="mt-3 text-[12px] text-status-red">{addError}</p>
-            )}
-            <div className="flex gap-2 mt-4">
-              <Button
-                variant="primary"
-                size="sm"
-                type="submit"
-                disabled={createEquipment.isPending}
-              >
-                {createEquipment.isPending ? "Saving…" : "Save Equipment"}
-              </Button>
-              <Button variant="secondary" size="sm" type="button" onClick={() => setShowAddForm(false)}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        )}
 
         {/* Table */}
         <div className="flex-1 overflow-auto px-6 py-4">
@@ -329,6 +261,7 @@ export default function EquipmentPage() {
               onRowClick={(row) => setDetailId(row.id as string)}
             />
           )}
+        </div>
         </div>
       </div>
 
