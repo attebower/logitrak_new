@@ -13,6 +13,22 @@ import { formatSerial, type LabelSize, type CodeType, type LabelDesign } from ".
 
 const MM_TO_INCH = 1 / 25.4;
 
+/**
+ * Map our label size ids to DYMO Connect internal LabelName strings. These
+ * match the SKU catalog DYMO Connect ships with — using the right name is
+ * what makes DYMO recognise the file as a real label for a specific roll.
+ *
+ * Format is always `<LabelType><SKU>` where the SKU comes from the DYMO
+ * label reel packaging (e.g. 30252 Address labels → "Addresss0722370").
+ */
+const DYMO_LABEL_NAMES: Record<string, string> = {
+  "30252": "Addresss0722370",        // Address 28×89mm
+  "30334": "MultiPurpose300680",      // Multipurpose 57×32mm
+  "30336": "MultiPurpose300687",      // Small multipurpose 25×54mm
+  "30256": "Shipping300707",          // Shipping 59×102mm
+  "30364": "NameBadgeLabel0722710",   // Name badge 41×89mm
+};
+
 export interface DymoArgs {
   serialStart: number;
   serialEnd: number;
@@ -44,6 +60,10 @@ export function buildDymoLabel(args: DymoArgs): string {
   const labelW = +(size.widthMm * MM_TO_INCH).toFixed(4);
   const labelH = +(size.heightMm * MM_TO_INCH).toFixed(4);
 
+  // Use the proper DYMO LabelName if we know the SKU, otherwise fall back.
+  // Unknown names are a common cause of "invalid file" errors in DYMO Connect.
+  const labelName = DYMO_LABEL_NAMES[size.id] ?? "Addresss0722370";
+
   // Safe inset so we don't draw right on the edge
   const inset = 0.08;
   const innerW = +(labelW - inset * 2).toFixed(4);
@@ -72,12 +92,13 @@ export function buildDymoLabel(args: DymoArgs): string {
 
   const barcodeFormat = isQR ? "QRCode" : "Code128Auto";
 
-  return `<?xml version="1.0" encoding="utf-8"?>
+  // DYMO Connect requires a UTF-8 BOM at the start of the file.
+  return `\uFEFF<?xml version="1.0" encoding="utf-8"?>
 <DesktopLabel Version="1">
   <DYMOLabel Version="4">
     <Description>LogiTrak Labels</Description>
     <Orientation>Landscape</Orientation>
-    <LabelName>LogiTrak_${size.widthMm}x${size.heightMm}</LabelName>
+    <LabelName>${labelName}</LabelName>
     <InitialLength>0</InitialLength>
     <BorderStyle>SolidLine</BorderStyle>
     <DYMORect>
