@@ -10,7 +10,8 @@
  * retired later once we confirm sidebar routing is the pattern.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus, Film, Zap, Calendar, ChevronDown, Building2,
   MapPin, Layers, Package, X, ChevronRight, FileDown, Pencil,
@@ -527,7 +528,23 @@ function AddSetModal({
 
 // ── On Location Modal ───────────────────────────────────────────────
 
-function NewOnLocationModal({
+function NewOnLocationModal(props: {
+  projectId:   string;
+  workspaceId: string;
+  onClose:     () => void;
+  onCreated:   (loc: { id: string; name: string }) => void;
+}) {
+  // Portal to document.body so this modal isn't nested inside the
+  // parent <form>. Nested forms in HTML get flattened, which caused
+  // the inner Save button to submit the outer Add/Edit Set form and
+  // led to unexpected navigation / mutation.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+  return createPortal(<NewOnLocationModalBody {...props} />, document.body);
+}
+
+function NewOnLocationModalBody({
   projectId,
   workspaceId,
   onClose,
