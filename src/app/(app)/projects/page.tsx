@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Film, Zap, Calendar, ChevronDown, Building2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, Film, Zap, Calendar, ChevronDown, Building2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -253,6 +254,7 @@ function ProjectCard({
   };
   workspaceId: string;
 }) {
+  const router = useRouter();
   const utils = trpc.useUtils();
   const updateStatus = trpc.project.updateStatus.useMutation({
     onSuccess: () => utils.project.list.invalidate(),
@@ -268,7 +270,10 @@ function ProjectCard({
   }
 
   return (
-    <div className="bg-white rounded-panel border border-grey-mid p-5 flex items-start justify-between gap-4">
+    <div
+      className="bg-white rounded-panel border border-grey-mid p-5 flex items-start justify-between gap-4 hover:border-brand-blue/40 transition-colors cursor-pointer group"
+      onClick={() => router.push(`/projects/${project.id}`)}
+    >
       <div className="flex items-start gap-3 min-w-0">
         <div className="mt-0.5 w-8 h-8 rounded-lg bg-brand-blue/10 flex items-center justify-center shrink-0">
           {type === "film_tv" ? <Film size={15} className="text-brand-blue" /> : <Zap size={15} className="text-brand-blue" />}
@@ -304,7 +309,7 @@ function ProjectCard({
         </div>
       </div>
 
-      <div className="relative shrink-0">
+      <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={() => setShowStatusMenu((v) => !v)}
           className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${STATUS_STYLES[status]}`}

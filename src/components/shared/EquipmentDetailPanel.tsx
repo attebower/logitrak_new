@@ -180,14 +180,27 @@ export function EquipmentDetailPanel({
 
             {/* ── Footer actions ── */}
             <div className="px-6 py-4 border-t border-grey-mid flex gap-2">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => onReportDamage?.(equipment.id)}
-                className="flex-1"
-              >
-                Report Damage
-              </Button>
+              {equipment.status === "damaged" || equipment.status === "under-repair" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => {
+                    window.location.href = `/damage?equipmentId=${equipment.id}`;
+                  }}
+                >
+                  Go to Damage Report
+                </Button>
+              ) : (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => onReportDamage?.(equipment.id)}
+                  className="flex-1"
+                >
+                  Report Damage
+                </Button>
+              )}
               <Button variant="secondary" size="sm" onClick={onClose} className="flex-1">
                 Close
               </Button>

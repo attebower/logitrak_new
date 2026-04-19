@@ -65,29 +65,31 @@ function relTime(d: Date | string | null | undefined): string {
 
 // ── Column definitions ────────────────────────────────────────────────────
 
+// Derive a single display status — damage always takes precedence over availability.
+function effectiveStatus(status: string, damageStatus: string): { label: string; colour: string } {
+  if (damageStatus === "damaged")      return { label: "Damaged",      colour: "text-status-red" };
+  if (damageStatus === "under_repair") return { label: "Under Repair", colour: "text-status-amber" };
+  if (damageStatus === "repaired")     return { label: "Repaired",     colour: "text-status-teal" };
+  if (status === "checked_out")        return { label: "Issued",       colour: "text-status-amber" };
+  if (status === "retired")            return { label: "Retired",      colour: "text-grey" };
+  return { label: "Available", colour: "text-status-green" };
+}
+
 const STATUS_COLS: ColumnDef[] = [
-  { key: "serial",       label: "Serial",   width: "w-28" },
-  { key: "name",         label: "Name",     width: "w-full" },
-  { key: "category",     label: "Category", width: "w-40",
+  { key: "serial",   label: "Serial",   width: "w-28" },
+  { key: "name",     label: "Name",     width: "w-full" },
+  { key: "category", label: "Category", width: "w-40",
     render: (row) => <span className="text-[13px] text-grey">{String(row.category ?? "—")}</span> },
-  { key: "status",       label: "Status",   width: "w-36",
+  { key: "status",   label: "Status",   width: "w-36",
     render: (row) => {
-      const s = String(row.status ?? "");
-      const colour = s === "available" ? "text-status-green" : s === "checked_out" ? "text-status-amber" : "text-grey";
-      return <span className={`text-[13px] font-medium ${colour}`}>{s.replace("_", " ")}</span>;
-    }},
-  { key: "damageStatus", label: "Damage",   width: "w-36",
-    render: (row) => {
-      const ds = String(row.damageStatus ?? "normal");
-      if (ds === "normal") return <span className="text-[13px] text-grey">—</span>;
-      const colour = ds === "damaged" ? "text-status-red" : ds === "under_repair" ? "text-status-amber" : "text-status-teal";
-      return <span className={`text-[13px] font-medium ${colour}`}>{ds.replace("_", " ")}</span>;
+      const { label, colour } = effectiveStatus(String(row.status ?? ""), String(row.damageStatus ?? "normal"));
+      return <span className={`text-[13px] font-medium ${colour}`}>{label}</span>;
     }},
 ];
 
-const statusText = (s: string) => {
-  const colour = s === "available" ? "text-status-green" : s === "checked_out" ? "text-status-amber" : "text-grey";
-  return <span className={`text-[13px] font-medium ${colour}`}>{s.replace(/_/g, " ")}</span>;
+const statusText = (s: string, ds?: string) => {
+  const { label, colour } = effectiveStatus(s, ds ?? "normal");
+  return <span className={`text-[13px] font-medium ${colour}`}>{label}</span>;
 };
 
 const damageText = (ds: string) => {
@@ -118,7 +120,7 @@ const DAMAGED_COLS: ColumnDef[] = [
 const BY_LOCATION_COLS: ColumnDef[] = [
   { key: "serial",   label: "Serial",   width: "w-28" },
   { key: "name",     label: "Name",     width: "w-full" },
-  { key: "status",   label: "Status",   width: "w-36", render: (row) => statusText(String(row.status ?? "")) },
+  { key: "status",   label: "Status",   width: "w-36", render: (row) => statusText(String(row.status ?? ""), String(row.damageStatus ?? "normal")) },
   { key: "location", label: "Location", width: "w-48" },
   { key: "since",    label: "Since",    width: "w-28" },
 ];
@@ -384,11 +386,13 @@ export default function ReportsPage() {
     const evt = e.checkEvents[0];
     const loc = [evt?.studio?.name, evt?.stage?.name, evt?.set?.name].filter(Boolean).join(" → ");
     return {
-      id:       e.id,
-      serial:   e.serial,
-      name:     e.name,
-      location: loc || "—",
-      since:    relTime(evt?.createdAt),
+      id:           e.id,
+      serial:       e.serial,
+      name:         e.name,
+      status:       e.status,
+      damageStatus: e.damageStatus,
+      location:     loc || "—",
+      since:        relTime(evt?.createdAt),
     };
   });
 

@@ -26,7 +26,7 @@ import { ScanWarningList } from "@/components/shared/ScanWarningBanner";
 import type { ScanWarning } from "@/components/shared/ScanWarningBanner";
 import type { BatchItem, BatchItemStatus } from "@/components/shared/BatchListItem";
 import type { CheckMode } from "@/components/shared/ModeToggle";
-import type { LocationValue, StudioOption } from "@/components/shared/LocationPicker";
+import type { LocationValue, StudioOption, ProjectOption } from "@/components/shared/LocationPicker";
 
 // ── Prisma positionType enum → LocationPicker PositionType ────────────────
 
@@ -48,8 +48,15 @@ type ConditionChoice = "good" | "needs-attention" | "damaged";
 interface BatchEntry extends BatchItem {
   equipmentId: string;
 }
+interface DamageReportDraft {
+  description:    string;
+  itemLocation:   string;
+  damageLocation: string;
+}
+
 interface BatchEntryWithCondition extends BatchEntry {
-  condition?: ConditionChoice;
+  condition?:    ConditionChoice;
+  damageReport?: DamageReportDraft;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -61,16 +68,24 @@ export default function CheckInOutPage() {
   const [mode,       setMode]       = useState<CheckMode>("out");
 
   // Check-out state
-  const [outStep,     setOutStep]     = useState<CheckOutStep>("scan");
-  const [outBatch,    setOutBatch]    = useState<BatchEntry[]>([]);
-  const [outLocation, setOutLocation] = useState<LocationValue>({});
-  const [forceOut,    setForceOut]    = useState(false);
-  const [outError,    setOutError]    = useState<string | null>(null);
+  const [outStep,        setOutStep]        = useState<CheckOutStep>("scan");
+  const [outBatch,       setOutBatch]       = useState<BatchEntry[]>([]);
+  const [outLocation,    setOutLocation]    = useState<LocationValue>({});
+  const [forceOut,       setForceOut]       = useState(false);
+  const [outError,       setOutError]       = useState<string | null>(null);
+  const [lastOutCount,   setLastOutCount]   = useState(0); // count snapshot before batch reset
 
   // Check-in state
-  const [inStep,  setInStep]  = useState<CheckInStep>("scan");
-  const [inBatch, setInBatch] = useState<BatchEntryWithCondition[]>([]);
-  const [inError, setInError] = useState<string | null>(null);
+  const [inStep,       setInStep]       = useState<CheckInStep>("scan");
+  const [inBatch,      setInBatch]      = useState<BatchEntryWithCondition[]>([]);
+  const [inError,      setInError]      = useState<string | null>(null);
+  const [lastInCount,  setLastInCount]  = useState(0);
+
+  // Damage report card — serial of item currently being filled in
+  const [damageCardSerial, setDamageCardSerial] = useState<string | null>(null);
+  const [damageDesc,       setDamageDesc]       = useState("");
+  const [damageItemLoc,    setDamageItemLoc]    = useState("");
+  const [damageNoticedLoc, setDamageNoticedLoc] = useState("");
 
   // Scan state
   const [warnings,    setWarnings]    = useState<ScanWarning[]>([]);
@@ -90,6 +105,12 @@ export default function CheckInOutPage() {
   const [repairSubmitting, setRepairSubmitting] = useState(false);
 
   // ── Live data ─────────────────────────────────────────────────────────
+
+  // Projects for LocationPicker (active only)
+  const { data: projectsData } = trpc.project.list.useQuery({ workspaceId });
+  const projectOptions: ProjectOption[] = (projectsData ?? [])
+    .filter((p) => p.status === "active")
+    .map((p) => ({ id: p.id, name: p.name, studioId: p.studio?.id ?? null }));
 
   // Studios for LocationPicker (load once)
   const { data: studios } = trpc.location.studio.list.useQuery({ workspaceId });
@@ -130,100 +151,137 @@ export default function CheckInOutPage() {
   // ── Mutations ─────────────────────────────────────────────────────────
 
   const checkOut = trpc.checkEvent.checkOut.useMutation({
-    onSuccess: () => {
-      setOutBatch([]);
-      setOutLocation({});
-      setOutStep("scan");
-      setOutError(null);
-      setForceOut(false);
+    onSuccess: (_data, variables) => {
+      // Capture the count BEFORE clearing the batch
+      setLastOutCount(variables.equipmentIds.length);
+      // Show success briefly then full reset — clear batch, location, warnings, errors
+      setTimeout(() => {
+        setOutBatch([]);
+        setOutLocation({});
+        setOutStep("scan");
+        setOutError(null);
+        setForceOut(false);
+        setWarnings([]);
+        setScanSearch("");
+        checkOut.reset();
+      }, 2000);
     },
     onError: (err) => setOutError(err.message),
   });
 
   const checkIn = trpc.checkEvent.checkIn.useMutation({
-    onSuccess: () => {
-      setInBatch([]);
-      setInStep("scan");
-      setInError(null);
+    onSuccess: (_data, variables) => {
+      setLastInCount(variables.equipmentIds.length);
+      setTimeout(() => {
+        setInBatch([]);
+        setInStep("scan");
+        setInError(null);
+        setWarnings([]);
+        setScanSearch("");
+        setDamageCardSerial(null);
+        setDamageDesc("");
+        setDamageItemLoc("");
+        setDamageNoticedLoc("");
+        checkIn.reset();
+      }, 2000);
     },
     onError: (err) => setInError(err.message),
   });
 
-  // ── Scan handler ──────────────────────────────────────────────────────
+  // ── Serial auto-validate: fires as soon as a complete serial is entered ──
 
-  const handleScan = useCallback((serial: string) => {
+  const handleSerialInput = useCallback(async (raw: string) => {
+    const serial = raw.trim().toUpperCase();
+    if (!/^[0-9]{5}$/.test(serial)) return; // not a complete 5-digit serial yet
+
     const currentBatch = mode === "out" ? outBatch : inBatch;
 
-    // Client-side duplicate check
+    // Duplicate in current batch
     if (currentBatch.find((i) => i.serial === serial)) {
       addWarning({ serial, kind: "duplicate", message: `${serial} is already in the batch.` });
+      setScanSearch("");
       return;
     }
 
-    // Look up in search results or trigger a search
-    const match = searchResults?.items.find(
-      (i) => i.serial.toUpperCase() === serial.toUpperCase()
-    );
+    // Fetch fresh from server — don't rely on stale search cache
+    let match: { id: string; serial: string; name: string; status: string; damageStatus: string } | undefined;
+    try {
+      const result = await utils.equipment.list.fetch({ workspaceId, search: serial, limit: 1 });
+      match = result?.items?.find((i: { serial: string }) => i.serial.toUpperCase() === serial);
+    } catch {
+      addWarning({ serial, kind: "unknown", message: `Error looking up ${serial}.` });
+      setScanSearch("");
+      return;
+    }
+
+    setScanSearch(""); // clear input regardless of outcome
 
     if (!match) {
-      // Try setting the search to trigger a query
-      setScanSearch(serial);
-      addWarning({ serial, kind: "unknown", message: `${serial} not found — searching…` });
+      addWarning({ serial, kind: "unknown", message: `${serial} not found in this workspace.` });
       return;
     }
 
-    // Client-side damage pre-flight
-    if (match.damageStatus === "damaged" || match.damageStatus === "under_repair") {
+    // Damage checks
+    if (match.damageStatus === "damaged") {
       if (mode === "out") {
-        // Block checkout of damaged items
-        addWarning({
-          serial,
-          kind: "damaged",
-          message: `${serial} is ${match.damageStatus.replace("_", " ")} and cannot be checked out.`,
-        });
+        addWarning({ serial, kind: "damaged", message: `${serial} is damaged and cannot be checked out.` });
         return;
       } else {
-        // On check-in, show repair prompt instead of blocking
-        setRepairPrompt({
-          serial: match.serial,
-          name: match.name,
-          equipmentId: match.id,
-          damageStatus: match.damageStatus,
-        });
+        // Check-in: offer repair prompt
+        setRepairPrompt({ serial: match.serial, name: match.name, equipmentId: match.id, damageStatus: match.damageStatus });
+        return;
+      }
+    }
+    if (match.damageStatus === "under_repair") {
+      if (mode === "out") {
+        addWarning({ serial, kind: "damaged", message: `${serial} is under repair and cannot be checked out.` });
+        return;
+      } else {
+        setRepairPrompt({ serial: match.serial, name: match.name, equipmentId: match.id, damageStatus: match.damageStatus });
         return;
       }
     }
 
-    // Mode-specific state warning
-    if (mode === "out" && match.status === "checked_out") {
-      addWarning({
-        serial,
-        kind: "wrong-state",
-        message: `${serial} is already checked out.`,
-      });
-      return;
+    // Status checks
+    if (mode === "out") {
+      if (match.status === "checked_out") {
+        addWarning({ serial, kind: "wrong-state", message: `${serial} is already checked out.` });
+        return;
+      }
+      if (match.status === "retired") {
+        addWarning({ serial, kind: "damaged", message: `${serial} is retired and cannot be checked out.` });
+        return;
+      }
     }
-    if (mode === "in" && match.status !== "checked_out") {
-      addWarning({
-        serial,
-        kind: "wrong-state",
-        message: `${serial} is not currently checked out.`,
-      });
-      return;
+    if (mode === "in") {
+      if (match.status === "available") {
+        addWarning({ serial, kind: "wrong-state", message: `${serial} is already checked in.` });
+        return;
+      }
+      if (match.status === "retired") {
+        addWarning({ serial, kind: "damaged", message: `${serial} is retired.` });
+        return;
+      }
     }
 
+    // All good — add to batch instantly
     clearWarning(serial);
-
     const entry: BatchEntry = {
       serial:      match.serial,
       type:        match.name,
       status:      "ok" as BatchItemStatus,
       equipmentId: match.id,
     };
-
     if (mode === "out") setOutBatch((b) => [...b, entry]);
     else                setInBatch((b) => [...b, entry]);
-  }, [mode, outBatch, inBatch, searchResults, forceOut, isManager]);
+  }, [mode, outBatch, inBatch, utils, workspaceId]);
+
+  // ── Scan handler (QR / barcode scanner path) ──────────────────────────
+
+  const handleScan = useCallback((serial: string) => {
+    // Scanners fire a complete serial — route through the same auto-validate path
+    void handleSerialInput(serial);
+  }, [handleSerialInput]);
 
   function addWarning(w: ScanWarning) {
     setWarnings((prev) => [w, ...prev.filter((x) => x.serial !== w.serial)].slice(0, 3));
@@ -242,6 +300,7 @@ export default function CheckInOutPage() {
     checkOut.mutate({
       workspaceId,
       equipmentIds:             outBatch.map((i) => i.equipmentId),
+      productionName:           outLocation.projectName,
       studioId:                 outLocation.studioId,
       stageId:                  outLocation.stageId,
       setId:                    outLocation.setId,
@@ -266,12 +325,14 @@ export default function CheckInOutPage() {
       },
       {
         onSuccess: () => {
-          // Auto-create damage reports for items flagged as damaged during check-in
+          // Submit damage reports using the filled-in report data
           for (const item of damagedItems) {
             createDamageReport.mutate({
               workspaceId,
-              equipmentId:  item.equipmentId,
-              description:  `Damage noticed on check-in for ${item.serial}`,
+              equipmentId:    item.equipmentId,
+              description:    item.damageReport?.description    ?? `Damage noticed on check-in for ${item.serial}`,
+              itemLocation:   item.damageReport?.itemLocation   || undefined,
+              damageLocation: item.damageReport?.damageLocation || undefined,
             });
           }
         },
@@ -282,6 +343,7 @@ export default function CheckInOutPage() {
   // ── Location validation ────────────────────────────────────────────────
 
   const locationComplete =
+    !!outLocation.projectId &&
     !!outLocation.studioId &&
     !!outLocation.stageId &&
     !!outLocation.positionType &&
@@ -421,7 +483,7 @@ export default function CheckInOutPage() {
           {mode === "out" && (
             <>
               {checkOut.isSuccess ? (
-                <SuccessCard message={`${outBatch.length} item${outBatch.length !== 1 ? "s" : ""} checked out successfully.`} />
+                <SuccessCard message={`${lastOutCount} item${lastOutCount !== 1 ? "s" : ""} checked out successfully.`} />
               ) : (
                 <>
                   {/* Step 1: Scan */}
@@ -429,50 +491,26 @@ export default function CheckInOutPage() {
                     <div className="space-y-4">
                       <div className="lg:hidden"><ScanArea onScan={handleScan} onManualEntry={handleScan} /></div>
 
-                      {/* Manual search */}
+                      {/* Serial input — auto-validates on 5-digit complete entry */}
                       <div className="relative">
                         <input
-                          type="search"
-                          placeholder="Or search by name / serial…"
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Type serial number…"
                           value={scanSearch}
-                          onChange={async (e) => {
-                          const v = e.target.value;
-                          setScanSearch(v);
-                          if (/^[0-9]{5}$/.test(v.trim())) {
-                            const serial = v.trim();
-                            setScanSearch("");
-                            try {
-                              const result = await utils.equipment.list.fetch({ workspaceId, search: serial, limit: 1 });
-                              const match = result?.items?.find((i: { serial: string }) => i.serial === serial);
-                              if (match) {
-                                handleScan(serial);
-                              } else {
-                                addWarning({ serial, kind: "unknown", message: `${serial} not found.` });
-                              }
-                            } catch {
-                              handleScan(serial);
-                            }
-                          }
-                        }}
-                          className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\D/g, "").slice(0, 5);
+                            setScanSearch(v);
+                            if (v.length === 5) void handleSerialInput(v);
+                          }}
+                          className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue font-mono tracking-widest"
+                          autoComplete="off"
+                          autoFocus
                         />
-                        {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
-                          <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-grey-mid rounded-card shadow-card overflow-hidden">
-                            {searchResults.items.slice(0, 6).map((item) => (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => {
-                                  handleScan(item.serial);
-                                  setScanSearch("");
-                                }}
-                                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-grey-light border-b border-grey-mid last:border-b-0"
-                              >
-                                <span className="text-serial text-surface-dark">{item.serial}</span>
-                                <span className="text-[12px] text-grey flex-1">{item.name}</span>
-                              </button>
-                            ))}
-                          </div>
+                        {scanSearch.length > 0 && scanSearch.length < 5 && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-grey">
+                            {5 - scanSearch.length} more digit{5 - scanSearch.length !== 1 ? "s" : ""}
+                          </span>
                         )}
                       </div>
 
@@ -504,7 +542,7 @@ export default function CheckInOutPage() {
                           Where is this equipment going?
                         </h2>
                         <LocationPicker
-                          production="Series 4 — Episode 7"
+                          projects={projectOptions}
                           studios={studioOptions}
                           value={outLocation}
                           onChange={setOutLocation}
@@ -576,7 +614,7 @@ export default function CheckInOutPage() {
           {mode === "in" && (
             <>
               {checkIn.isSuccess ? (
-                <SuccessCard message={`${inBatch.length} item${inBatch.length !== 1 ? "s" : ""} returned successfully.`} />
+                <SuccessCard message={`${lastInCount} item${lastInCount !== 1 ? "s" : ""} returned successfully.`} />
               ) : (
                 <>
                   {/* Step 1: Scan */}
@@ -584,46 +622,26 @@ export default function CheckInOutPage() {
                     <div className="space-y-4">
                       <div className="lg:hidden"><ScanArea onScan={handleScan} onManualEntry={handleScan} /></div>
 
+                      {/* Serial input — auto-validates on 5-digit complete entry */}
                       <div className="relative">
                         <input
-                          type="search"
-                          placeholder="Or search by name / serial…"
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Type serial number…"
                           value={scanSearch}
-                          onChange={async (e) => {
-                          const v = e.target.value;
-                          setScanSearch(v);
-                          if (/^[0-9]{5}$/.test(v.trim())) {
-                            const serial = v.trim();
-                            setScanSearch("");
-                            try {
-                              const result = await utils.equipment.list.fetch({ workspaceId, search: serial, limit: 1 });
-                              const match = result?.items?.find((i: { serial: string }) => i.serial === serial);
-                              if (match) {
-                                handleScan(serial);
-                              } else {
-                                addWarning({ serial, kind: "unknown", message: `${serial} not found.` });
-                              }
-                            } catch {
-                              handleScan(serial);
-                            }
-                          }
-                        }}
-                          className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\D/g, "").slice(0, 5);
+                            setScanSearch(v);
+                            if (v.length === 5) void handleSerialInput(v);
+                          }}
+                          className="w-full bg-white border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue font-mono tracking-widest"
+                          autoComplete="off"
+                          autoFocus
                         />
-                        {scanSearch.length >= 2 && searchResults && searchResults.items.length > 0 && (
-                          <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-grey-mid rounded-card shadow-card overflow-hidden">
-                            {searchResults.items.filter((i) => i.status === "checked_out").slice(0, 6).map((item) => (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => { handleScan(item.serial); setScanSearch(""); }}
-                                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-grey-light border-b border-grey-mid last:border-b-0"
-                              >
-                                <span className="text-serial text-surface-dark">{item.serial}</span>
-                                <span className="text-[12px] text-grey flex-1">{item.name}</span>
-                              </button>
-                            ))}
-                          </div>
+                        {scanSearch.length > 0 && scanSearch.length < 5 && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-grey">
+                            {5 - scanSearch.length} more digit{5 - scanSearch.length !== 1 ? "s" : ""}
+                          </span>
                         )}
                       </div>
 
@@ -650,37 +668,120 @@ export default function CheckInOutPage() {
                       <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
                         <div className="px-5 py-4 border-b border-grey-mid">
                           <h2 className="text-[14px] font-semibold text-surface-dark">Item Condition</h2>
-                          <p className="text-[12px] text-grey mt-0.5">Check each item before confirming return</p>
+                          <p className="text-[12px] text-grey mt-0.5">Flag anything damaged before confirming return.</p>
                         </div>
                         <div className="divide-y divide-grey-mid">
                           {inBatch.map((item) => (
-                            <div key={item.serial} className="px-5 py-4 flex items-center gap-4 flex-wrap">
-                              <div className="flex-1 min-w-[120px]">
-                                <span className="text-serial text-surface-dark">{item.serial}</span>
-                                <span className="text-[12px] text-grey ml-2">{item.type}</span>
+                            <div key={item.serial}>
+                              <div className="px-5 py-4 flex items-center gap-4">
+                                <div className="flex-1 min-w-[120px]">
+                                  <span className="text-serial text-surface-dark">{item.serial}</span>
+                                  <span className="text-[12px] text-grey ml-2">{item.type}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {item.condition === "damaged" ? (
+                                    <>
+                                      <span className="text-[11px] font-semibold text-status-red">Damaged</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          // Clear damage flag
+                                          setInBatch((b) => b.map((i) => i.serial === item.serial
+                                            ? { ...i, condition: undefined, damageReport: undefined } : i));
+                                          if (damageCardSerial === item.serial) setDamageCardSerial(null);
+                                        }}
+                                        className="text-[11px] text-grey hover:text-status-red underline"
+                                      >
+                                        remove
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDamageDesc("");
+                                        setDamageItemLoc("");
+                                        setDamageNoticedLoc("");
+                                        setDamageCardSerial(item.serial);
+                                      }}
+                                      className="px-2.5 py-1 rounded-btn text-[11px] font-semibold border border-grey-mid text-grey hover:border-status-red hover:text-status-red transition-colors"
+                                    >
+                                      Flag Damaged
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex gap-2 flex-wrap">
-                                {(["good", "needs-attention", "damaged"] as ConditionChoice[]).map((c) => (
-                                  <button
-                                    key={c} type="button"
-                                    onClick={() =>
-                                      setInBatch((b) =>
-                                        b.map((i) => i.serial === item.serial ? { ...i, condition: c } : i)
-                                      )
-                                    }
-                                    className={[
-                                      "px-2.5 py-1 rounded-btn text-[11px] font-semibold border transition-colors",
-                                      item.condition === c
-                                        ? c === "good" ? "bg-status-green text-white border-status-green"
-                                          : c === "needs-attention" ? "bg-status-amber text-white border-status-amber"
-                                          : "bg-status-red text-white border-status-red"
-                                        : "bg-white text-grey border-grey-mid hover:border-grey",
-                                    ].join(" ")}
-                                  >
-                                    {c === "good" ? "Good" : c === "needs-attention" ? "Needs Attention" : "Damaged"}
-                                  </button>
-                                ))}
-                              </div>
+
+                              {/* Inline damage report card */}
+                              {damageCardSerial === item.serial && (
+                                <div className="mx-4 mb-4 bg-status-red/5 border border-status-red/20 rounded-lg p-4 space-y-3">
+                                  <p className="text-[12px] font-semibold text-status-red">Damage Report — {item.serial} — {item.type}</p>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                      Description <span className="text-status-red">*</span>
+                                    </label>
+                                    <textarea
+                                      rows={3}
+                                      autoFocus
+                                      value={damageDesc}
+                                      onChange={(e) => setDamageDesc(e.target.value)}
+                                      placeholder="Describe the damage in detail…"
+                                      className="w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-status-red resize-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                      Location on item <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={damageItemLoc}
+                                      onChange={(e) => setDamageItemLoc(e.target.value)}
+                                      placeholder="e.g. Front lens element, left handle, top panel"
+                                      className="w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-status-red"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                      Where was the damage noticed? <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={damageNoticedLoc}
+                                      onChange={(e) => setDamageNoticedLoc(e.target.value)}
+                                      placeholder="e.g. Stage 7A — Throne Room, loading bay"
+                                      className="w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-status-red"
+                                    />
+                                  </div>
+                                  <div className="flex gap-2 justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => setDamageCardSerial(null)}
+                                      className="px-3 py-1.5 rounded-btn text-[12px] text-grey border border-grey-mid hover:bg-grey-light"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={!damageDesc.trim()}
+                                      onClick={() => {
+                                        setInBatch((b) => b.map((i) => i.serial === item.serial
+                                          ? { ...i, condition: "damaged", damageReport: {
+                                              description:    damageDesc.trim(),
+                                              itemLocation:   damageItemLoc.trim(),
+                                              damageLocation: damageNoticedLoc.trim(),
+                                            }}
+                                          : i
+                                        ));
+                                        setDamageCardSerial(null);
+                                      }}
+                                      className="px-3 py-1.5 rounded-btn text-[12px] font-semibold bg-status-red text-white disabled:opacity-40"
+                                    >
+                                      Save Report
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -688,7 +789,7 @@ export default function CheckInOutPage() {
 
                       {inBatch.some((i) => i.condition === "damaged") && (
                         <div className="bg-status-red-light border border-status-red/20 rounded-card px-4 py-3 text-[12px] text-status-red">
-                          ⚠ A damage report will be created automatically for damaged items.
+                          ⚠ Damage reports will be submitted when you confirm the return.
                         </div>
                       )}
 
@@ -702,7 +803,7 @@ export default function CheckInOutPage() {
                         <Button variant="secondary" onClick={() => setInStep("scan")} className="flex-1">← Back</Button>
                         <Button
                           variant="primary" size="lg" className="flex-1"
-                          disabled={inBatch.some((i) => !i.condition) || checkIn.isPending}
+                          disabled={checkIn.isPending}
                           onClick={handleInConfirm}
                         >
                           {checkIn.isPending ? "Returning…" : `Confirm Return (${inBatch.length})`}

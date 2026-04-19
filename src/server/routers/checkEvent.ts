@@ -201,6 +201,9 @@ export const checkEventRouter = router({
           });
 
           // BUG-010: include workspaceId in update where clause (atomic ownership check)
+          // If item has an active damage status, keep it as-is (status stays available
+          // but damageStatus remains damaged/under_repair — do not silently clear damage).
+          // Only set status: available; damage must be resolved via the repair flow.
           await tx.equipment.updateMany({
             where: { id: item.id, workspaceId: ctx.workspaceId! },
             data: { status: "available" },
@@ -211,7 +214,9 @@ export const checkEventRouter = router({
               workspaceId: ctx.workspaceId!,
               actorId: userId,
               eventType: "check_in",
-              description: "Checked in",
+              description: item.damageStatus && item.damageStatus !== "repaired"
+                ? `Checked in (damage status: ${item.damageStatus})`
+                : "Checked in",
               entityType: "equipment",
               entityId: item.id,
             },

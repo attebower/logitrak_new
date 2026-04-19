@@ -35,7 +35,21 @@ export default function DamagePage() {
   const [selectedSerial, setSelectedSerial] = useState("");
   const [description,   setDescription]   = useState("");
   const [damageLocation, setDamageLocation] = useState("");
+  const [itemLocation,   setItemLocation]   = useState("");
   const [formError,     setFormError]     = useState<string | null>(null);
+
+  // Reset form state whenever the prefill param changes (e.g. navigating away and back)
+  useEffect(() => {
+    setShowForm(!!prefillEquipmentId);
+    setSelectedEqId(prefillEquipmentId);
+    setSelectedSerial("");
+    setEquipSearch("");
+    setDescription("");
+    setDamageLocation("");
+    setItemLocation("");
+    setFormError(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillEquipmentId]);
 
   // Pre-fill serial label when opened with ?equipmentId=
   const { data: prefillEquipment } = trpc.equipment.get.useQuery(
@@ -76,6 +90,7 @@ export default function DamagePage() {
       setSelectedSerial("");
       setDescription("");
       setDamageLocation("");
+      setItemLocation("");
       setFormError(null);
     },
     onError: (err) => setFormError(err.message),
@@ -117,6 +132,7 @@ export default function DamagePage() {
       equipmentId:    selectedEqId,
       description:    description.trim(),
       damageLocation: damageLocation.trim() || undefined,
+      itemLocation:   itemLocation.trim()   || undefined,
     });
   }
 
@@ -188,7 +204,7 @@ export default function DamagePage() {
             </div>
 
             <div>
-              <label className="block text-caption text-grey uppercase mb-1.5">Description</label>
+              <label className="block text-caption text-grey uppercase mb-1.5">Description <span className="text-status-red">*</span></label>
               <textarea
                 required
                 value={description}
@@ -200,12 +216,23 @@ export default function DamagePage() {
             </div>
 
             <div>
-              <label className="block text-caption text-grey uppercase mb-1.5">Where was the damage noticed? (optional)</label>
+              <label className="block text-caption text-grey uppercase mb-1.5">Location on item <span className="text-grey font-normal normal-case">(optional)</span></label>
+              <input
+                type="text"
+                value={itemLocation}
+                onChange={(e) => setItemLocation(e.target.value)}
+                placeholder="e.g. Front lens element, left handle, top panel"
+                className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+              />
+            </div>
+
+            <div>
+              <label className="block text-caption text-grey uppercase mb-1.5">Where was the damage noticed? <span className="text-grey font-normal normal-case">(optional)</span></label>
               <input
                 type="text"
                 value={damageLocation}
                 onChange={(e) => setDamageLocation(e.target.value)}
-                placeholder="e.g. Stage 7A — Throne Room"
+                placeholder="e.g. Stage 7A — Throne Room, loading bay"
                 className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
               />
             </div>

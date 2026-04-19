@@ -66,6 +66,8 @@ export interface StudioOption {
 // ── Value shape ───────────────────────────────────────────────────────────
 
 export interface LocationValue {
+  projectId?:             string;
+  projectName?:           string;
   studioId?:              string;
   stageId?:               string;
   setId?:                 string;
@@ -73,11 +75,19 @@ export interface LocationValue {
   exactLocationDescription?: string;
 }
 
+// ── Project option ────────────────────────────────────────────────────────
+
+export interface ProjectOption {
+  id:       string;
+  name:     string;
+  studioId: string | null;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
 
 export interface LocationPickerProps {
-  /** Current production/series — display-only */
-  production:  string;
+  /** Active projects for the project selector */
+  projects:    ProjectOption[];
   /** Available studios with nested stages and sets */
   studios:     StudioOption[];
   value:       LocationValue;
@@ -86,24 +96,44 @@ export interface LocationPickerProps {
 }
 
 export function LocationPicker({
-  production,
+  projects,
   studios,
   value,
   onChange,
   className,
 }: LocationPickerProps) {
-  // Derive cascading options from current selections
+  // The project's linked studio (if any) — used to sort the studio list
+  const selectedProject   = projects.find((p) => p.id === value.projectId);
+  const projectStudioId   = selectedProject?.studioId ?? null;
+
+  // Sort studios: project's studio first (with separator), rest alphabetically
+  const recommendedStudio = projectStudioId ? studios.find((s) => s.id === projectStudioId) : null;
+  const otherStudios      = studios
+    .filter((s) => s.id !== projectStudioId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const selectedStudio = studios.find((s) => s.id === value.studioId);
   const selectedStage  = selectedStudio?.stages.find((s) => s.id === value.stageId);
   const stages         = selectedStudio?.stages ?? [];
   const sets           = selectedStage?.sets ?? [];
 
-  // Show exact location description only for the two position types that need it
   const showExactLocation =
     value.positionType != null &&
     (EXACT_LOCATION_REQUIRED as string[]).includes(value.positionType);
 
-  // Reset downstream selections when parent changes
+  function handleProjectChange(projectId: string) {
+    const project = projects.find((p) => p.id === projectId);
+    // Pre-select the project's studio, clear downstream
+    onChange({
+      ...value,
+      projectId,
+      projectName: project?.name,
+      studioId:    project?.studioId ?? undefined,
+      stageId:     undefined,
+      setId:       undefined,
+    });
+  }
+
   function handleStudioChange(studioId: string) {
     onChange({ ...value, studioId, stageId: undefined, setId: undefined });
   }
@@ -117,7 +147,6 @@ export function LocationPicker({
   }
 
   function handlePositionTypeChange(positionType: PositionType) {
-    // Clear exact description when switching to a type that doesn't need it
     const needsExact = (EXACT_LOCATION_REQUIRED as string[]).includes(positionType);
     onChange({
       ...value,
@@ -128,17 +157,22 @@ export function LocationPicker({
 
   return (
     <div className={cn("space-y-3.5", className)}>
-      {/* Production (read-only) */}
-      <FormField label="Production">
-        <input
-          type="text"
-          value={production}
-          readOnly
-          className={formInputClass + " opacity-60 cursor-default"}
-        />
+
+      {/* Project selector */}
+      <FormField label="Project">
+        <select
+          value={value.projectId ?? ""}
+          onChange={(e) => handleProjectChange(e.target.value)}
+          className={formSelectClass}
+        >
+          <option value="" disabled>Select project…</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
       </FormField>
 
-      {/* Studio / Venue */}
+      {/* Studio / Venue — recommended project studio at top */}
       <FormField label="Studio / Venue">
         <select
           value={value.studioId ?? ""}
@@ -146,7 +180,17 @@ export function LocationPicker({
           className={formSelectClass}
         >
           <option value="" disabled>Select studio…</option>
-          {studios.map((s) => (
+          {recommendedStudio && (
+            <>
+              <option value={recommendedStudio.id}>
+                ★ {recommendedStudio.name} — project default
+              </option>
+              {otherStudios.length > 0 && (
+                <option disabled value="">───────────────</option>
+              )}
+            </>
+          )}
+          {otherStudios.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>

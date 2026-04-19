@@ -8,6 +8,320 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model Workspace {
+  id                   String                @id @default(cuid())
+  name                 String
+  slug                 String                @unique
+  industryType         IndustryType          @default(film_tv)
+  subscriptionTier     SubscriptionTier      @default(starter)
+  subscriptionStatus   SubscriptionStatus    @default(trialing)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  trialEndsAt          DateTime?
+  maxUsers             Int                   @default(5)
+  maxAssets            Int                   @default(500)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  activityEvents       ActivityEvent[]
+  checkEvents          CheckEvent[]
+  damageReports        DamageReport[]
+  equipment            Equipment[]
+  equipmentCategories  EquipmentCategory[]
+  projectSets          ProjectSet[]
+  projects             Project[]
+  repairLogs           RepairLog[]
+  setSnapshots         SetSnapshot[]
+  studios              Studio[]
+  invitations          WorkspaceInvitation[]
+  members              WorkspaceUser[]
+
+  @@map("workspaces")
+}
+
+model UserProfile {
+  id                   String                @id
+  email                String                @unique
+  displayName          String?
+  avatarUrl            String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  department           String?
+  fullName             String?
+  nickname             String?
+  subDepartment        String?
+  activityEvents       ActivityEvent[]
+  checkEvents          CheckEvent[]
+  damageReports        DamageReport[]
+  repairLogs           RepairLog[]
+  setSnapshots         SetSnapshot[]
+  sentInvitations      WorkspaceInvitation[]
+  workspaceMemberships WorkspaceUser[]
+
+  @@map("user_profiles")
+}
+
+model WorkspaceUser {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(read_only)
+  invitedBy   String?
+  joinedAt    DateTime?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  user        UserProfile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_users")
+}
+
+model WorkspaceInvitation {
+  id          String        @id @default(cuid())
+  workspaceId String
+  email       String
+  role        WorkspaceRole @default(operator)
+  invitedById String
+  token       String        @unique @default(cuid())
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  nickname    String?
+  invitedBy   UserProfile   @relation(fields: [invitedById], references: [id])
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_invitations")
+}
+
+model EquipmentCategory {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  groupName   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  equipment   Equipment[]
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@map("equipment_categories")
+}
+
+model Equipment {
+  id            String             @id @default(cuid())
+  workspaceId   String
+  serial        String
+  name          String
+  categoryId    String?
+  status        EquipmentStatus    @default(available)
+  damageStatus  DamageStatus       @default(normal)
+  notes         String?
+  assetValue    Decimal?           @db.Decimal(10, 2)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  parentId      String?
+  checkEvents   CheckEvent[]
+  damageReports DamageReport[]
+  category      EquipmentCategory? @relation(fields: [categoryId], references: [id])
+  parent        Equipment?         @relation("EquipmentKits", fields: [parentId], references: [id])
+  children      Equipment[]        @relation("EquipmentKits")
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  repairLogs    RepairLog[]
+
+  @@unique([workspaceId, serial])
+  @@index([workspaceId, status])
+  @@index([workspaceId, damageStatus])
+  @@index([workspaceId, categoryId])
+  @@map("equipment")
+}
+
+model Studio {
+  id          String       @id @default(cuid())
+  workspaceId String
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  displayId   String?
+  checkEvents CheckEvent[]
+  projects    Project[]
+  stages      Stage[]
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@map("studios")
+}
+
+model Stage {
+  id          String       @id @default(cuid())
+  workspaceId String
+  studioId    String
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  checkEvents CheckEvent[]
+  projectSets ProjectSet[]
+  sets        Set[]
+  studio      Studio       @relation(fields: [studioId], references: [id], onDelete: Cascade)
+
+  @@unique([studioId, name])
+  @@map("stages")
+}
+
+model Set {
+  id          String       @id @default(cuid())
+  workspaceId String
+  stageId     String
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  description String?
+  checkEvents CheckEvent[]
+  projectSets ProjectSet[]
+  stage       Stage        @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@unique([stageId, name])
+  @@map("sets")
+}
+
+model CheckEvent {
+  id                       String         @id @default(cuid())
+  workspaceId              String
+  equipmentId              String
+  userId                   String
+  eventType                CheckEventType
+  productionName           String?
+  studioId                 String?
+  stageId                  String?
+  setId                    String?
+  positionType             PositionType?
+  positionDescription      String?
+  createdAt                DateTime       @default(now())
+  exactLocationDescription String?
+  equipment                Equipment      @relation(fields: [equipmentId], references: [id])
+  set                      Set?           @relation(fields: [setId], references: [id])
+  stage                    Stage?         @relation(fields: [stageId], references: [id])
+  studio                   Studio?        @relation(fields: [studioId], references: [id])
+  user                     UserProfile    @relation(fields: [userId], references: [id])
+  workspace                Workspace      @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([equipmentId, createdAt(sort: Desc)])
+  @@index([workspaceId, productionName, eventType])
+  @@map("check_events")
+}
+
+model SetSnapshot {
+  id            String      @id @default(cuid())
+  workspaceId   String
+  name          String
+  studioId      String?
+  stageId       String?
+  setId         String?
+  createdById   String
+  equipmentList Json
+  summary       Json
+  createdAt     DateTime    @default(now())
+  createdBy     UserProfile @relation(fields: [createdById], references: [id])
+  workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("set_snapshots")
+}
+
+model ActivityEvent {
+  id          String      @id @default(cuid())
+  workspaceId String
+  actorId     String
+  eventType   String
+  description String
+  entityType  String
+  entityId    String
+  createdAt   DateTime    @default(now())
+  actor       UserProfile @relation(fields: [actorId], references: [id])
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@map("activity_events")
+}
+
+model Project {
+  id            String        @id @default(cuid())
+  workspaceId   String
+  name          String
+  industryType  IndustryType  @default(film_tv)
+  status        ProjectStatus @default(active)
+  startDate     DateTime?
+  description   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  studioId      String?
+  eventLocation String?
+  projectSets   ProjectSet[]
+  studio        Studio?       @relation(fields: [studioId], references: [id])
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@map("projects")
+}
+
+model ProjectSet {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  workspaceId String
+  projectId   String
+  setId       String
+  stageId     String
+  notes       String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_projectid_fkey")
+  set         Set       @relation(fields: [setId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_setid_fkey")
+  stage       Stage     @relation(fields: [stageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "project_sets_stageid_fkey")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_workspaceid_fkey")
+
+  @@unique([projectId, setId], map: "project_sets_projectid_setid_key")
+  @@index([workspaceId, projectId], map: "project_sets_workspaceid_projectid_idx")
+  @@map("project_sets")
+}
+
+model DamageReport {
+  id             String      @id @default(cuid())
+  workspaceId    String
+  equipmentId    String
+  reporterId     String
+  description    String
+  damageLocation String?  // where on set the damage was noticed
+  itemLocation    String?  // location on the physical item (e.g. front lens, left handle)
+  reportedAt     DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+  equipment      Equipment   @relation(fields: [equipmentId], references: [id])
+  reporter       UserProfile @relation(fields: [reporterId], references: [id])
+  workspace      Workspace   @relation(fields: [workspaceId], references: [id])
+  repairLogs     RepairLog[]
+
+  @@index([workspaceId, reportedAt(sort: Desc)])
+  @@map("damage_reports")
+}
+
+model RepairLog {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  equipmentId    String
+  damageReportId String?
+  repairerId     String?
+  repairedByName String
+  repairLocation String?
+  description    String
+  repairedAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  damageReport   DamageReport? @relation(fields: [damageReportId], references: [id])
+  equipment      Equipment     @relation(fields: [equipmentId], references: [id])
+  repairer       UserProfile?  @relation(fields: [repairerId], references: [id])
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id])
+
+  @@map("repair_logs")
+}
+
 enum SubscriptionTier {
   starter
   professional
@@ -63,321 +377,4 @@ enum PositionType {
   rigged_to_outside_of_set
   inside_prop_make
   in_prop_dressing
-}
-
-model Workspace {
-  id                   String             @id @default(cuid())
-  name                 String
-  slug                 String             @unique
-  industryType         IndustryType       @default(film_tv)
-  subscriptionTier     SubscriptionTier   @default(starter)
-  subscriptionStatus   SubscriptionStatus @default(trialing)
-  stripeCustomerId     String?
-  stripeSubscriptionId String?
-  trialEndsAt          DateTime?
-  maxUsers             Int                @default(5)
-  maxAssets            Int                @default(500)
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-
-  members             WorkspaceUser[]
-  invitations         WorkspaceInvitation[]
-  equipment           Equipment[]
-  studios             Studio[]
-  equipmentCategories EquipmentCategory[]
-  checkEvents         CheckEvent[]
-  damageReports       DamageReport[]
-  repairLogs          RepairLog[]
-  setSnapshots        SetSnapshot[]
-  activityEvents      ActivityEvent[]
-  projects            Project[]
-
-  @@map("workspaces")
-}
-
-model UserProfile {
-  id             String   @id // matches auth.users.id from Supabase
-  email          String   @unique
-  displayName    String?
-  fullName       String?
-  nickname       String?
-  department     String?  // e.g. "Lighting", "Props", "Camera"
-  subDepartment  String?  // free text e.g. "Rigging Gaffer"
-  avatarUrl      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  workspaceMemberships WorkspaceUser[]
-  sentInvitations      WorkspaceInvitation[]
-  checkEvents          CheckEvent[]
-  damageReports        DamageReport[]
-  repairLogs           RepairLog[]
-  setSnapshots         SetSnapshot[]
-  activityEvents       ActivityEvent[]
-
-  @@map("user_profiles")
-}
-
-model WorkspaceUser {
-  id          String        @id @default(cuid())
-  workspaceId String
-  userId      String
-  role        WorkspaceRole @default(read_only)
-  invitedBy   String?
-  joinedAt    DateTime?
-  isActive    Boolean       @default(true)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([workspaceId, userId])
-  @@map("workspace_users")
-}
-
-model WorkspaceInvitation {
-  id          String        @id @default(cuid())
-  workspaceId String
-  email       String
-  role        WorkspaceRole @default(operator)
-  invitedById String
-  token       String        @unique @default(cuid())
-  nickname    String?       // carried through to UserProfile on acceptance
-  expiresAt   DateTime
-  acceptedAt  DateTime?
-  createdAt   DateTime      @default(now())
-
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  invitedBy UserProfile @relation(fields: [invitedById], references: [id])
-
-  @@map("workspace_invitations")
-}
-
-model EquipmentCategory {
-  id          String   @id @default(cuid())
-  workspaceId String
-  name        String
-  groupName   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  equipment Equipment[]
-
-  @@unique([workspaceId, name])
-  @@map("equipment_categories")
-}
-
-model Equipment {
-  id           String          @id @default(cuid())
-  workspaceId  String
-  serial       String
-  name         String
-  categoryId   String?
-  // Sprint 3: kit/container tracking (see SCHEMA_DECISIONS.md #16)
-  // parentId is null for standalone items; set to a parent equipment id for kit members
-  parentId     String?
-  status       EquipmentStatus @default(available)
-  damageStatus DamageStatus    @default(normal)
-  notes        String?
-  assetValue   Decimal?        @db.Decimal(10, 2)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-
-  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  category      EquipmentCategory? @relation(fields: [categoryId], references: [id])
-  parent        Equipment?         @relation("EquipmentKits", fields: [parentId], references: [id])
-  children      Equipment[]        @relation("EquipmentKits")
-  checkEvents   CheckEvent[]
-  damageReports DamageReport[]
-  repairLogs    RepairLog[]
-
-  @@unique([workspaceId, serial])
-  @@index([workspaceId, status])
-  @@index([workspaceId, damageStatus])
-  @@index([workspaceId, categoryId])
-  @@map("equipment")
-}
-
-model Studio {
-  id          String   @id @default(cuid())
-  workspaceId String
-  name        String
-  displayId   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  stages      Stage[]
-  checkEvents CheckEvent[]
-  projects    Project[]
-
-  @@unique([workspaceId, name])
-  @@map("studios")
-}
-
-model Stage {
-  id          String   @id @default(cuid())
-  workspaceId String
-  studioId    String
-  name        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  studio      Studio       @relation(fields: [studioId], references: [id], onDelete: Cascade)
-  sets        Set[]
-  checkEvents CheckEvent[]
-
-  @@unique([studioId, name])
-  @@map("stages")
-}
-
-model Set {
-  id          String   @id @default(cuid())
-  workspaceId String
-  stageId     String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  stage       Stage        @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  checkEvents CheckEvent[]
-
-  @@unique([stageId, name])
-  @@map("sets")
-}
-
-model CheckEvent {
-  id                  String         @id @default(cuid())
-  workspaceId         String
-  equipmentId         String
-  userId              String
-  eventType           CheckEventType
-  productionName      String?
-  studioId            String?
-  stageId             String?
-  setId               String?
-  positionType             PositionType?
-  positionDescription      String?        // general free-text position
-  exactLocationDescription String?        // only for inside_prop_make / in_prop_dressing
-  createdAt                DateTime       @default(now())
-
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  equipment Equipment   @relation(fields: [equipmentId], references: [id])
-  user      UserProfile @relation(fields: [userId], references: [id])
-  studio    Studio?     @relation(fields: [studioId], references: [id])
-  stage     Stage?      @relation(fields: [stageId], references: [id])
-  set       Set?        @relation(fields: [setId], references: [id])
-
-  @@index([workspaceId, createdAt(sort: Desc)])
-  @@index([equipmentId, createdAt(sort: Desc)])
-  @@index([workspaceId, productionName, eventType])
-  @@map("check_events")
-}
-
-// ─── SetSnapshot (Sprint 2) ───────────────────────────────────────────────────
-// Point-in-time snapshot of all equipment on a named set.
-// equipmentList: JSON array of equipment records at time of creation.
-// summary: { totalItems, checkedOut, available, damaged }
-
-model SetSnapshot {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  name          String
-  studioId      String?
-  stageId       String?
-  setId         String?
-  createdById   String
-  equipmentList Json
-  summary       Json
-  createdAt     DateTime @default(now())
-
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy UserProfile @relation(fields: [createdById], references: [id])
-
-  @@map("set_snapshots")
-}
-
-// ─── ActivityEvent (all tiers) ────────────────────────────────────────────────
-// Basic activity feed — dashboard widget, last N events.
-// Separate from Enterprise audit log (tamper-proof, before/after state).
-// Written on: check-out, check-in, damage report, repair log, equipment changes.
-
-model ActivityEvent {
-  id          String   @id @default(cuid())
-  workspaceId String
-  actorId     String
-  eventType   String   // e.g. "check_out", "check_in", "damage_reported", "repair_logged"
-  description String
-  entityType  String   // "equipment" | "check_event" | "damage_report" | "repair_log"
-  entityId    String
-  createdAt   DateTime @default(now())
-
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  actor     UserProfile @relation(fields: [actorId], references: [id])
-
-  @@index([workspaceId, createdAt(sort: Desc)])
-  @@index([entityType, entityId])
-  @@map("activity_events")
-}
-
-model Project {
-  id           String        @id @default(cuid())
-  workspaceId  String
-  name         String
-  industryType IndustryType  @default(film_tv)
-  status       ProjectStatus @default(active)
-  startDate    DateTime?
-  studioId      String?
-  eventLocation String?
-  description   String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  studio    Studio?   @relation(fields: [studioId], references: [id])
-
-  @@index([workspaceId, status])
-  @@map("projects")
-}
-
-model DamageReport {
-  id             String   @id @default(cuid())
-  workspaceId    String
-  equipmentId    String
-  reporterId     String
-  description    String
-  damageLocation String?
-  reportedAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-
-  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  equipment  Equipment    @relation(fields: [equipmentId], references: [id])
-  reporter   UserProfile  @relation(fields: [reporterId], references: [id])
-  repairLogs RepairLog[]
-
-  @@index([workspaceId, reportedAt(sort: Desc)])
-  @@map("damage_reports")
-}
-
-model RepairLog {
-  id             String   @id @default(cuid())
-  workspaceId    String
-  equipmentId    String
-  damageReportId String?
-  repairerId     String?
-  repairedByName String
-  repairLocation String?
-  description    String
-  repairedAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  equipment    Equipment     @relation(fields: [equipmentId], references: [id])
-  damageReport DamageReport? @relation(fields: [damageReportId], references: [id])
-  repairer     UserProfile?  @relation(fields: [repairerId], references: [id])
-
-  @@map("repair_logs")
 }
