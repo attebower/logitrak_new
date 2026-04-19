@@ -183,6 +183,11 @@ export interface SnapshotData {
     stageName: string;
     studioName: string;
     notes: string | null;
+    onLocation: {
+      name:        string;
+      address:     string | null;
+      description: string | null;
+    } | null;
   };
   generatedBy: string;
   generatedAt: Date;
@@ -226,7 +231,8 @@ export interface SnapshotData {
 // ── Components ────────────────────────────────────────────────────────────
 
 function Header({ data }: { data: SnapshotData }) {
-  const location = data.project.studioName
+  const onLoc = data.set.onLocation;
+  const projectLocation = data.project.studioName
     ?? data.project.eventLocation
     ?? "—";
 
@@ -239,7 +245,7 @@ function Header({ data }: { data: SnapshotData }) {
       </View>
       <Text style={s.title}>{data.set.name}</Text>
       <Text style={s.subtitle}>
-        {data.project.name} · {data.set.studioName} — {data.set.stageName}
+        {data.project.name} · {onLoc ? `On Location — ${onLoc.name}` : `${data.set.studioName} — ${data.set.stageName}`}
       </Text>
 
       <View style={s.metaRow}>
@@ -247,14 +253,31 @@ function Header({ data }: { data: SnapshotData }) {
           <Text style={s.metaLabel}>Project</Text>
           <Text style={s.metaValue}>{data.project.name}</Text>
         </View>
-        <View>
-          <Text style={s.metaLabel}>{data.project.industryType === "events" ? "Event Location" : "Studio"}</Text>
-          <Text style={s.metaValue}>{location}</Text>
-        </View>
-        <View>
-          <Text style={s.metaLabel}>Stage</Text>
-          <Text style={s.metaValue}>{data.set.stageName}</Text>
-        </View>
+        {onLoc ? (
+          <>
+            <View>
+              <Text style={s.metaLabel}>Location</Text>
+              <Text style={s.metaValue}>{onLoc.name}</Text>
+            </View>
+            {onLoc.address && (
+              <View>
+                <Text style={s.metaLabel}>Where</Text>
+                <Text style={s.metaValue}>{onLoc.address}</Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            <View>
+              <Text style={s.metaLabel}>{data.project.industryType === "events" ? "Event Location" : "Studio"}</Text>
+              <Text style={s.metaValue}>{projectLocation}</Text>
+            </View>
+            <View>
+              <Text style={s.metaLabel}>Stage</Text>
+              <Text style={s.metaValue}>{data.set.stageName}</Text>
+            </View>
+          </>
+        )}
         <View>
           <Text style={s.metaLabel}>Generated</Text>
           <Text style={s.metaValue}>{fmtDateTime(data.generatedAt)}</Text>
@@ -264,6 +287,13 @@ function Header({ data }: { data: SnapshotData }) {
           <Text style={s.metaValue}>{data.generatedBy}</Text>
         </View>
       </View>
+
+      {onLoc?.description && (
+        <View style={{ marginTop: 14 }}>
+          <Text style={s.metaLabel}>Location Details</Text>
+          <Text style={{ fontSize: 10, marginTop: 2, color: SURFACE_DARK }}>{onLoc.description}</Text>
+        </View>
+      )}
 
       {data.set.notes && (
         <View style={{ marginTop: 14 }}>

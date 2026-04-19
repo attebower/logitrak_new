@@ -288,33 +288,32 @@ function EditSetModal({
   projectId,
   workspaceId,
   projectSetId,
+  projectStudioId,
   initial,
   onClose,
 }: {
-  projectId:    string;
-  workspaceId:  string;
-  projectSetId: string;
+  projectId:       string;
+  workspaceId:     string;
+  projectSetId:    string;
+  projectStudioId: string | null;
   initial: {
-    setName:  string;
-    stageId:  string;
-    studioId: string;
-    notes:    string;
+    setName:      string;
+    stageId:      string;
+    studioId:     string;
+    onLocationId: string;
+    notes:        string;
   };
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
 
-  const [studioId, setStudioId] = useState(initial.studioId);
-  const [stageId,  setStageId]  = useState(initial.stageId);
-  const [setName,  setSetName]  = useState(initial.setName);
-  const [notes,    setNotes]    = useState(initial.notes);
-  const [error,    setError]    = useState<string | null>(null);
-
-  const { data: studios } = trpc.location.studio.list.useQuery({ workspaceId });
-  const { data: stages }  = trpc.location.stage.list.useQuery(
-    { workspaceId, studioId },
-    { enabled: !!studioId }
-  );
+  const [venue,   setVenue]   = useState<VenueValue>({
+    stageId:      initial.stageId,
+    onLocationId: initial.onLocationId,
+  });
+  const [setName, setSetName] = useState(initial.setName);
+  const [notes,   setNotes]   = useState(initial.notes);
+  const [error,   setError]   = useState<string | null>(null);
 
   const update = trpc.project.sets.update.useMutation({
     onSuccess: () => {
@@ -324,23 +323,25 @@ function EditSetModal({
     onError: (e) => setError(e.message),
   });
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!stageId)        { setError("Please select a stage."); return; }
+    if (!venue.stageId && !venue.onLocationId) { setError("Please select a stage or location."); return; }
     if (!setName.trim()) { setError("Set name is required."); return; }
     update.mutate({
       workspaceId,
       projectSetId,
-      setName: setName.trim(),
-      stageId,
-      notes:   notes.trim() || undefined,
+      setName:      setName.trim(),
+      stageId:      venue.stageId      || undefined,
+      onLocationId: venue.onLocationId || undefined,
+      notes:        notes.trim() || undefined,
     });
   }
 
   const inputCls = "w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue";
   const nameChanged  = setName.trim() !== initial.setName;
-  const stageChanged = stageId !== initial.stageId;
+  const venueChanged = venue.stageId      !== initial.stageId ||
+                       venue.onLocationId !== initial.onLocationId;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
@@ -348,7 +349,7 @@ function EditSetModal({
         <div className="px-6 py-5 border-b border-grey-mid flex items-center justify-between">
           <div>
             <h2 className="text-[16px] font-bold text-surface-dark">Edit Set</h2>
-            <p className="text-[13px] text-slate-500 mt-0.5">Rename, move to a different stage, or update notes.</p>
+            <p className="text-[13px] text-slate-500 mt-0.5">Rename, move to a different stage or location, or update notes.</p>
           </div>
           <button onClick={onClose} className="text-grey hover:text-surface-dark">
             <X size={18} />
@@ -368,38 +369,14 @@ function EditSetModal({
             />
           </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Studio / Venue
-            </label>
-            <select
-              value={studioId}
-              onChange={(e) => { setStudioId(e.target.value); setStageId(""); }}
-              className={inputCls}
-            >
-              <option value="">Select studio…</option>
-              {(studios ?? []).map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Stage / Area <span className="text-status-red">*</span>
-            </label>
-            <select
-              value={stageId}
-              onChange={(e) => setStageId(e.target.value)}
-              disabled={!studioId}
-              className={cn(inputCls, !studioId && "opacity-40 cursor-not-allowed")}
-            >
-              <option value="">Select stage…</option>
-              {(stages ?? []).map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
+          <VenuePicker
+            projectId={projectId}
+            workspaceId={workspaceId}
+            projectStudioId={projectStudioId}
+            initialStudioId={initial.studioId}
+            value={venue}
+            onChange={setVenue}
+          />
 
           <div>
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -414,7 +391,7 @@ function EditSetModal({
             />
           </div>
 
-          {(nameChanged || stageChanged) && setName.trim() && stageId && (
+          {(nameChanged || venueChanged) && setName.trim() && (venue.stageId || venue.onLocationId) && (
             <p className="text-[11px] text-slate-500 bg-grey-light border border-grey-mid rounded-btn px-3 py-2">
               Renaming or moving the set will re-link this project to a different set. Other projects using the original set won&apos;t be affected.
             </p>
@@ -434,6 +411,10 @@ function EditSetModal({
   );
 }
 
+// NewOnLocationModal + VenuePicker are defined below AddSetModal in
+// this file; AddSetModal uses them as forward references through the
+// function scope (all hoisted within the module).
+
 function AddSetModal({
   projectId,
   workspaceId,
@@ -446,22 +427,10 @@ function AddSetModal({
   onClose:         () => void;
 }) {
   const utils = trpc.useUtils();
-  const [studioId, setStudioId] = useState(projectStudioId ?? "");
-  const [stageId,  setStageId]  = useState("");
-  const [setName,  setSetName]  = useState("");
-  const [notes,    setNotes]    = useState("");
-  const [error,    setError]    = useState<string | null>(null);
-
-  const { data: studios } = trpc.location.studio.list.useQuery({ workspaceId });
-  const { data: stages }  = trpc.location.stage.list.useQuery(
-    { workspaceId, studioId },
-    { enabled: !!studioId }
-  );
-
-  const recommendedStudio = (studios ?? []).find((s) => s.id === projectStudioId);
-  const otherStudios = (studios ?? [])
-    .filter((s) => s.id !== projectStudioId)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const [venue,   setVenue]   = useState<VenueValue>({ stageId: "", onLocationId: "" });
+  const [setName, setSetName] = useState("");
+  const [notes,   setNotes]   = useState("");
+  const [error,   setError]   = useState<string | null>(null);
 
   const add = trpc.project.sets.add.useMutation({
     onSuccess: () => {
@@ -471,15 +440,23 @@ function AddSetModal({
     onError: (e) => setError(e.message),
   });
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!stageId)        { setError("Please select a stage."); return; }
+    if (!venue.stageId && !venue.onLocationId) { setError("Please select a stage or location."); return; }
     if (!setName.trim()) { setError("Please enter a set name."); return; }
-    add.mutate({ workspaceId, projectId, stageId, setName: setName.trim(), notes: notes.trim() || undefined });
+    add.mutate({
+      workspaceId,
+      projectId,
+      stageId:      venue.stageId      || undefined,
+      onLocationId: venue.onLocationId || undefined,
+      setName:      setName.trim(),
+      notes:        notes.trim() || undefined,
+    });
   }
 
   const inputCls = "w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue";
+  const venueReady = !!(venue.stageId || venue.onLocationId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
@@ -487,7 +464,7 @@ function AddSetModal({
         <div className="px-6 py-5 border-b border-grey-mid flex items-center justify-between">
           <div>
             <h2 className="text-[16px] font-bold text-surface-dark">Add Set to Project</h2>
-            <p className="text-[13px] text-slate-500 mt-0.5">Name the set and choose which stage it&apos;s on.</p>
+            <p className="text-[13px] text-slate-500 mt-0.5">Name the set and choose the stage or on-location venue.</p>
           </div>
           <button onClick={onClose} className="text-grey hover:text-surface-dark">
             <X size={18} />
@@ -495,44 +472,14 @@ function AddSetModal({
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Studio / Venue
-            </label>
-            <select
-              value={studioId}
-              onChange={(e) => { setStudioId(e.target.value); setStageId(""); }}
-              className={inputCls}
-            >
-              <option value="">Select studio…</option>
-              {recommendedStudio && (
-                <>
-                  <option value={recommendedStudio.id}>{recommendedStudio.name}</option>
-                  {otherStudios.length > 0 && <option disabled value="">───────────────</option>}
-                </>
-              )}
-              {otherStudios.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Stage / Area
-            </label>
-            <select
-              value={stageId}
-              onChange={(e) => setStageId(e.target.value)}
-              disabled={!studioId}
-              className={cn(inputCls, !studioId && "opacity-40 cursor-not-allowed")}
-            >
-              <option value="">Select stage…</option>
-              {(stages ?? []).map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
+          <VenuePicker
+            projectId={projectId}
+            workspaceId={workspaceId}
+            projectStudioId={projectStudioId}
+            initialStudioId={projectStudioId ?? ""}
+            value={venue}
+            onChange={setVenue}
+          />
 
           <div>
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -542,12 +489,12 @@ function AddSetModal({
               type="text" autoFocus value={setName}
               onChange={(e) => setSetName(e.target.value)}
               placeholder="e.g. Throne Room, Ext. Village, Studio B"
-              disabled={!stageId}
-              className={cn(inputCls, !stageId && "opacity-40 cursor-not-allowed")}
+              disabled={!venueReady}
+              className={cn(inputCls, !venueReady && "opacity-40 cursor-not-allowed")}
             />
-            {stageId && (
+            {venueReady && (
               <p className="text-[11px] text-slate-400 mt-1">
-                A new set will be created if this name doesn&apos;t already exist on the selected stage.
+                A new set will be created if this name doesn&apos;t already exist at the selected venue.
               </p>
             )}
           </div>
@@ -574,6 +521,239 @@ function AddSetModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ── On Location Modal ───────────────────────────────────────────────
+
+function NewOnLocationModal({
+  projectId,
+  workspaceId,
+  onClose,
+  onCreated,
+}: {
+  projectId:   string;
+  workspaceId: string;
+  onClose:     () => void;
+  onCreated:   (loc: { id: string; name: string }) => void;
+}) {
+  const utils = trpc.useUtils();
+  const [name,        setName]        = useState("");
+  const [description, setDescription] = useState("");
+  const [address,     setAddress]     = useState("");
+  const [error,       setError]       = useState<string | null>(null);
+
+  const create = trpc.project.onLocations.create.useMutation({
+    onSuccess: (loc) => {
+      void utils.project.onLocations.list.invalidate({ workspaceId, projectId });
+      onCreated({ id: loc.id, name: loc.name });
+      onClose();
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!name.trim()) { setError("Location name is required."); return; }
+    create.mutate({
+      workspaceId,
+      projectId,
+      name:        name.trim(),
+      description: description.trim() || undefined,
+      address:     address.trim()     || undefined,
+    });
+  }
+
+  const inputCls = "w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue";
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
+      <div className="w-full max-w-md bg-white rounded-panel border border-grey-mid shadow-lg">
+        <div className="px-6 py-5 border-b border-grey-mid flex items-center justify-between">
+          <div>
+            <h2 className="text-[16px] font-bold text-surface-dark">New On-Location Venue</h2>
+            <p className="text-[13px] text-slate-500 mt-0.5">Add a location outside a studio. It&apos;ll be reusable for other sets on this project.</p>
+          </div>
+          <button onClick={onClose} className="text-grey hover:text-surface-dark">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Location Name <span className="text-status-red">*</span>
+            </label>
+            <input
+              type="text" autoFocus value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Trafalgar Square, Brighton Pier"
+              className={inputCls}
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Where is it <span className="text-slate-400 font-normal normal-case">(address / city / notes)</span>
+            </label>
+            <input
+              type="text" value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. Trafalgar Square, London WC2N 5DN"
+              className={inputCls}
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Description <span className="text-slate-400 font-normal normal-case">(optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Access notes, contacts, timings, etc."
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+
+          {error && <p className="text-[12px] text-status-red">{error}</p>}
+
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={create.isPending}>
+              {create.isPending ? "Saving…" : "Add Location"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Venue Picker ─────────────────────────────────────────────────────
+// Studio+stage dropdowns, with an "On Location" section + new location
+// option. Emits a VenueValue where exactly one field is set.
+
+type VenueValue = { stageId: string; onLocationId: string };
+
+function VenuePicker({
+  projectId,
+  workspaceId,
+  projectStudioId,
+  initialStudioId,
+  value,
+  onChange,
+  stageLabel = "Stage / Area",
+}: {
+  projectId:        string;
+  workspaceId:      string;
+  projectStudioId:  string | null;
+  initialStudioId?: string;
+  value:            VenueValue;
+  onChange:         (v: VenueValue) => void;
+  stageLabel?:      string;
+}) {
+  const [studioId, setStudioId] = useState<string>(initialStudioId ?? "");
+  const [showNewLocation, setShowNewLocation] = useState(false);
+
+  const { data: studios } = trpc.location.studio.list.useQuery({ workspaceId });
+  const { data: stages }  = trpc.location.stage.list.useQuery(
+    { workspaceId, studioId },
+    { enabled: !!studioId },
+  );
+  const { data: locations } = trpc.project.onLocations.list.useQuery({ workspaceId, projectId });
+
+  const recommendedStudio = (studios ?? []).find((s) => s.id === projectStudioId);
+  const otherStudios = (studios ?? [])
+    .filter((s) => s.id !== projectStudioId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const inputCls = "w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue";
+  const ON_LOCATION_NEW = "__ON_LOCATION_NEW__";
+
+  // If an onLocation is chosen, show "(on location)" in the studio slot
+  const studioDropdownDisabled = !!value.onLocationId;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+          Studio / Venue
+        </label>
+        <select
+          value={studioDropdownDisabled ? "" : studioId}
+          onChange={(e) => {
+            const next = e.target.value;
+            setStudioId(next);
+            onChange({ stageId: "", onLocationId: "" });
+          }}
+          disabled={studioDropdownDisabled}
+          className={cn(inputCls, studioDropdownDisabled && "opacity-40 cursor-not-allowed")}
+        >
+          <option value="">
+            {studioDropdownDisabled ? "— on location —" : "Select studio…"}
+          </option>
+          {recommendedStudio && (
+            <>
+              <option value={recommendedStudio.id}>{recommendedStudio.name}</option>
+              {otherStudios.length > 0 && <option disabled value="">───────────────</option>}
+            </>
+          )}
+          {otherStudios.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+          {stageLabel}
+        </label>
+        <select
+          value={
+            value.onLocationId
+              ? `loc:${value.onLocationId}`
+              : value.stageId || ""
+          }
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === ON_LOCATION_NEW) {
+              setShowNewLocation(true);
+              return;
+            }
+            if (v.startsWith("loc:")) {
+              onChange({ stageId: "", onLocationId: v.slice(4) });
+              return;
+            }
+            onChange({ stageId: v, onLocationId: "" });
+          }}
+          className={inputCls}
+        >
+          <option value="">Select stage or location…</option>
+          {studioId && (stages ?? []).map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+          {(((studioId && (stages ?? []).length > 0) || (locations ?? []).length > 0)) && (
+            <option disabled value="">─────── On Location ───────</option>
+          )}
+          {(locations ?? []).map((l) => (
+            <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>
+          ))}
+          <option value={ON_LOCATION_NEW}>+ New on-location venue…</option>
+        </select>
+      </div>
+
+      {showNewLocation && (
+        <NewOnLocationModal
+          projectId={projectId}
+          workspaceId={workspaceId}
+          onClose={() => setShowNewLocation(false)}
+          onCreated={(loc) => onChange({ stageId: "", onLocationId: loc.id })}
+        />
+      )}
     </div>
   );
 }
@@ -1142,6 +1322,7 @@ function ProjectDetail({
     setName:      string;
     stageId:      string;
     studioId:     string;
+    onLocationId: string;
     notes:        string;
   } | null>(null);
 
@@ -1308,17 +1489,28 @@ function ProjectDetail({
                   projectSetId: ps.id,
                   setId:        ps.set.id,
                   setName:      ps.set.name,
-                  stageName:    ps.stage.name,
+                  stageName:    ps.stage
+                    ? `${ps.stage.studio.name} — ${ps.stage.name}`
+                    : ps.onLocation?.name ?? "",
                 })}
               >
                 <div className="w-8 h-8 rounded-lg bg-brand-blue/8 flex items-center justify-center shrink-0">
                   <MapPin size={14} className="text-brand-blue" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-surface-dark">{ps.set.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[13px] font-semibold text-surface-dark">{ps.set.name}</p>
+                    {ps.onLocation && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-status-teal bg-status-teal/10 px-1.5 py-0.5 rounded">
+                        On Location
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[12px] text-slate-400 flex items-center gap-1 mt-0.5">
                     <Building2 size={10} />
-                    {ps.stage.studio.name} — {ps.stage.name}
+                    {ps.stage
+                      ? `${ps.stage.studio.name} — ${ps.stage.name}`
+                      : ps.onLocation?.address ?? ps.onLocation?.name ?? "—"}
                   </p>
                   {ps.notes && (
                     <p className="text-[11px] text-slate-400 mt-0.5">{ps.notes}</p>
@@ -1337,8 +1529,9 @@ function ProjectDetail({
                           setEditingSet({
                             projectSetId: ps.id,
                             setName:      ps.set.name,
-                            stageId:      ps.stage.id,
-                            studioId:     ps.stage.studio.id,
+                            stageId:      ps.stage?.id ?? "",
+                            studioId:     ps.stage?.studio.id ?? "",
+                            onLocationId: ps.onLocation?.id ?? "",
                             notes:        ps.notes ?? "",
                           });
                         }}
@@ -1382,11 +1575,13 @@ function ProjectDetail({
           projectId={projectId}
           workspaceId={workspaceId}
           projectSetId={editingSet.projectSetId}
+          projectStudioId={project.studio?.id ?? null}
           initial={{
-            setName:  editingSet.setName,
-            stageId:  editingSet.stageId,
-            studioId: editingSet.studioId,
-            notes:    editingSet.notes,
+            setName:      editingSet.setName,
+            stageId:      editingSet.stageId,
+            studioId:     editingSet.studioId,
+            onLocationId: editingSet.onLocationId,
+            notes:        editingSet.notes,
           }}
           onClose={() => setEditingSet(null)}
         />

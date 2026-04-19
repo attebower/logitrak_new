@@ -39,9 +39,10 @@ export async function GET(req: Request) {
     const ps = await prisma.projectSet.findUnique({
       where: { id: projectSetId },
       include: {
-        project: { include: { studio: { select: { name: true } } } },
-        set:     { select: { id: true, name: true, description: true } },
-        stage:   { select: { name: true, studio: { select: { name: true } } } },
+        project:    { include: { studio: { select: { name: true } } } },
+        set:        { select: { id: true, name: true, description: true } },
+        stage:      { select: { name: true, studio: { select: { name: true } } } },
+        onLocation: { select: { name: true, description: true, address: true } },
       },
     });
     if (!ps) return NextResponse.json({ error: "Project set not found" }, { status: 404 });
@@ -167,10 +168,18 @@ export async function GET(req: Request) {
         eventLocation: ps.project.eventLocation ?? null,
       },
       set: {
-        name:      ps.set.name,
-        stageName: ps.stage.name,
-        studioName: ps.stage.studio.name,
-        notes:     ps.notes ?? null,
+        name:       ps.set.name,
+        // When on-location, these stage/studio fields still get used as
+        // the "context" fallback; the dedicated onLocation block below
+        // is what the PDF actually prefers when present.
+        stageName:  ps.stage?.name          ?? ps.onLocation?.name    ?? "",
+        studioName: ps.stage?.studio.name   ?? "On Location",
+        notes:      ps.notes ?? null,
+        onLocation: ps.onLocation ? {
+          name:        ps.onLocation.name,
+          address:     ps.onLocation.address     ?? null,
+          description: ps.onLocation.description ?? null,
+        } : null,
       },
       generatedBy: profile?.displayName ?? profile?.email ?? "Unknown",
       generatedAt: new Date(),

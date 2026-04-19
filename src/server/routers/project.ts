@@ -65,6 +65,58 @@ export const projectRouter = router({
 
   // ── Project Sets ────────────────────────────────────────────────────────
 
+  // ── On-location venues (project-scoped) ─────────────────────────────
+
+  onLocations: router({
+    list: workspaceProcedure
+      .input(z.object({ workspaceId: z.string(), projectId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        return ctx.prisma.onLocation.findMany({
+          where: { projectId: input.projectId, workspaceId: ctx.workspaceId! },
+          orderBy: { name: "asc" },
+        });
+      }),
+
+    create: workspaceProcedure
+      .input(z.object({
+        workspaceId: z.string(),
+        projectId:   z.string(),
+        name:        z.string().min(1).max(100),
+        description: z.string().max(500).optional(),
+        address:     z.string().max(200).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!MANAGER_ROLES.includes(ctx.userRole!)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Manager or above required" });
+        }
+
+        // Verify project belongs to this workspace
+        const project = await ctx.prisma.project.findFirst({
+          where: { id: input.projectId, workspaceId: ctx.workspaceId! },
+          select: { id: true },
+        });
+        if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+
+        const name = input.name.trim();
+        const existing = await ctx.prisma.onLocation.findUnique({
+          where: { projectId_name: { projectId: input.projectId, name } },
+        });
+        if (existing) {
+          // Reuse rather than error — keeps 'create or reuse' simple for the UI
+          return existing;
+        }
+        return ctx.prisma.onLocation.create({
+          data: {
+            workspaceId: ctx.workspaceId!,
+            projectId:   input.projectId,
+            name,
+            description: input.description?.trim() || undefined,
+            address:     input.address?.trim()     || undefined,
+          },
+        });
+      }),
+  }),
+
   sets: router({
     list: workspaceProcedure
       .input(z.object({ workspaceId: z.string(), projectId: z.string() }))
@@ -73,43 +125,75 @@ export const projectRouter = router({
           where: { projectId: input.projectId, workspaceId: ctx.workspaceId! },
           orderBy: { createdAt: "asc" },
           include: {
-            set:   { select: { id: true, name: true, description: true } },
-            stage: { select: { id: true, name: true, studio: { select: { id: true, name: true } } } },
+            set:        { select: { id: true, name: true, description: true } },
+            stage:      { select: { id: true, name: true, studio: { select: { id: true, name: true } } } },
+            onLocation: { select: { id: true, name: true, description: true, address: true } },
           },
         });
       }),
 
     add: workspaceProcedure
       .input(z.object({
-        workspaceId: z.string(),
-        projectId:   z.string(),
-        stageId:     z.string(),
-        setName:     z.string().min(1).max(100),
-        notes:       z.string().optional(),
-      }))
+        workspaceId:  z.string(),
+        projectId:    z.string(),
+        stageId:      z.string().optional(),
+        onLocationId: z.string().optional(),
+        setName:      z.string().min(1).max(100),
+        notes:        z.string().optional(),
+      }).refine(
+        (v) => !!v.stageId !== !!v.onLocationId,
+        { message: "Must provide exactly one of stageId or onLocationId." },
+      ))
       .mutation(async ({ ctx, input }) => {
         if (!MANAGER_ROLES.includes(ctx.userRole!)) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Manager or above required" });
         }
 
-        // Verify stage belongs to this workspace
-        const stage = await ctx.prisma.stage.findFirst({
-          where: { id: input.stageId, studio: { workspaceId: ctx.workspaceId! } },
-        });
-        if (!stage) throw new TRPCError({ code: "NOT_FOUND", message: "Stage not found" });
+        let set;
+        if (input.stageId) {
+          // Stage-based path (unchanged semantics)
+          const stage = await ctx.prisma.stage.findFirst({
+            where: { id: input.stageId, studio: { workspaceId: ctx.workspaceId! } },
+          });
+          if (!stage) throw new TRPCError({ code: "NOT_FOUND", message: "Stage not found" });
 
-        // Create the set if it doesn't already exist on this stage
-        let set = await ctx.prisma.set.findUnique({
-          where: { stageId_name: { stageId: input.stageId, name: input.setName.trim() } },
-        });
-        if (!set) {
-          set = await ctx.prisma.set.create({
-            data: {
+          set = await ctx.prisma.set.findUnique({
+            where: { stageId_name: { stageId: input.stageId, name: input.setName.trim() } },
+          });
+          if (!set) {
+            set = await ctx.prisma.set.create({
+              data: {
+                workspaceId: ctx.workspaceId!,
+                stageId:     input.stageId,
+                name:        input.setName.trim(),
+              },
+            });
+          }
+        } else if (input.onLocationId) {
+          // On-location path
+          const loc = await ctx.prisma.onLocation.findFirst({
+            where: {
+              id:          input.onLocationId,
               workspaceId: ctx.workspaceId!,
-              stageId:     input.stageId,
-              name:        input.setName.trim(),
+              projectId:   input.projectId,
             },
           });
+          if (!loc) throw new TRPCError({ code: "NOT_FOUND", message: "On-location venue not found" });
+
+          set = await ctx.prisma.set.findUnique({
+            where: { onLocationId_name: { onLocationId: input.onLocationId, name: input.setName.trim() } },
+          });
+          if (!set) {
+            set = await ctx.prisma.set.create({
+              data: {
+                workspaceId:  ctx.workspaceId!,
+                onLocationId: input.onLocationId,
+                name:         input.setName.trim(),
+              },
+            });
+          }
+        } else {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Missing stage or location." });
         }
 
         // Check not already added to this project
@@ -122,15 +206,17 @@ export const projectRouter = router({
 
         return ctx.prisma.projectSet.create({
           data: {
-            workspaceId: ctx.workspaceId!,
-            projectId:   input.projectId,
-            setId:       set.id,
-            stageId:     input.stageId,
-            notes:       input.notes,
+            workspaceId:  ctx.workspaceId!,
+            projectId:    input.projectId,
+            setId:        set.id,
+            stageId:      input.stageId      ?? null,
+            onLocationId: input.onLocationId ?? null,
+            notes:        input.notes,
           },
           include: {
-            set:   { select: { id: true, name: true, description: true } },
-            stage: { select: { id: true, name: true, studio: { select: { id: true, name: true } } } },
+            set:        { select: { id: true, name: true, description: true } },
+            stage:      { select: { id: true, name: true, studio: { select: { id: true, name: true } } } },
+            onLocation: { select: { id: true, name: true, description: true, address: true } },
           },
         });
       }),
@@ -158,9 +244,13 @@ export const projectRouter = router({
         workspaceId:  z.string(),
         projectSetId: z.string(),
         setName:      z.string().min(1).max(100),
-        stageId:      z.string(),
+        stageId:      z.string().optional(),
+        onLocationId: z.string().optional(),
         notes:        z.string().optional(),
-      }))
+      }).refine(
+        (v) => !!v.stageId !== !!v.onLocationId,
+        { message: "Must provide exactly one of stageId or onLocationId." },
+      ))
       .mutation(async ({ ctx, input }) => {
         if (!MANAGER_ROLES.includes(ctx.userRole!)) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Manager or above required" });
@@ -172,28 +262,53 @@ export const projectRouter = router({
         });
         if (!ps) throw new TRPCError({ code: "NOT_FOUND", message: "Project set not found" });
 
-        // Verify the stage belongs to this workspace
-        const stage = await ctx.prisma.stage.findFirst({
-          where: { id: input.stageId, studio: { workspaceId: ctx.workspaceId! } },
-        });
-        if (!stage) throw new TRPCError({ code: "NOT_FOUND", message: "Stage not found" });
+        // Resolve target Set under the chosen venue
+        let targetSet;
+        if (input.stageId) {
+          const stage = await ctx.prisma.stage.findFirst({
+            where: { id: input.stageId, studio: { workspaceId: ctx.workspaceId! } },
+          });
+          if (!stage) throw new TRPCError({ code: "NOT_FOUND", message: "Stage not found" });
 
-        // Resolve target Set: either existing on that stage, or a new one
-        let targetSet = await ctx.prisma.set.findUnique({
-          where: { stageId_name: { stageId: input.stageId, name: input.setName.trim() } },
-        });
-        if (!targetSet) {
-          targetSet = await ctx.prisma.set.create({
-            data: {
+          targetSet = await ctx.prisma.set.findUnique({
+            where: { stageId_name: { stageId: input.stageId, name: input.setName.trim() } },
+          });
+          if (!targetSet) {
+            targetSet = await ctx.prisma.set.create({
+              data: {
+                workspaceId: ctx.workspaceId!,
+                stageId:     input.stageId,
+                name:        input.setName.trim(),
+              },
+            });
+          }
+        } else if (input.onLocationId) {
+          const loc = await ctx.prisma.onLocation.findFirst({
+            where: {
+              id:          input.onLocationId,
               workspaceId: ctx.workspaceId!,
-              stageId:     input.stageId,
-              name:        input.setName.trim(),
+              projectId:   ps.projectId,
             },
           });
+          if (!loc) throw new TRPCError({ code: "NOT_FOUND", message: "On-location venue not found" });
+
+          targetSet = await ctx.prisma.set.findUnique({
+            where: { onLocationId_name: { onLocationId: input.onLocationId, name: input.setName.trim() } },
+          });
+          if (!targetSet) {
+            targetSet = await ctx.prisma.set.create({
+              data: {
+                workspaceId:  ctx.workspaceId!,
+                onLocationId: input.onLocationId,
+                name:         input.setName.trim(),
+              },
+            });
+          }
+        } else {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Missing stage or location." });
         }
 
-        // Prevent collision: another ProjectSet on this project already
-        // pointing at the resolved set
+        // Prevent collision with another ProjectSet in the same project
         if (targetSet.id !== ps.setId) {
           const collision = await ctx.prisma.projectSet.findFirst({
             where: {
@@ -213,13 +328,15 @@ export const projectRouter = router({
         return ctx.prisma.projectSet.update({
           where: { id: ps.id },
           data: {
-            setId:   targetSet.id,
-            stageId: input.stageId,
-            notes:   input.notes?.trim() ? input.notes.trim() : null,
+            setId:        targetSet.id,
+            stageId:      input.stageId      ?? null,
+            onLocationId: input.onLocationId ?? null,
+            notes:        input.notes?.trim() ? input.notes.trim() : null,
           },
           include: {
-            set:   { select: { id: true, name: true, description: true } },
-            stage: { select: { id: true, name: true, studio: { select: { id: true, name: true } } } },
+            set:        { select: { id: true, name: true, description: true } },
+            stage:      { select: { id: true, name: true, studio: { select: { id: true, name: true } } } },
+            onLocation: { select: { id: true, name: true, description: true, address: true } },
           },
         });
       }),

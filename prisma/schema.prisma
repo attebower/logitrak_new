@@ -35,6 +35,7 @@ model Workspace {
   setSnapshots         SetSnapshot[]
   setPhotos            SetPhoto[]
   setLightingLayouts   SetLightingLayout[]
+  onLocations          OnLocation[]
   studios              Studio[]
   invitations          WorkspaceInvitation[]
   members              WorkspaceUser[]
@@ -200,19 +201,48 @@ model Stage {
 }
 
 model Set {
-  id          String       @id @default(cuid())
-  workspaceId String
-  stageId     String
-  name        String
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  description String?
-  checkEvents CheckEvent[]
-  projectSets ProjectSet[]
-  stage       Stage        @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  id            String       @id @default(cuid())
+  workspaceId   String
+  // Exactly one of stageId / onLocationId is set.
+  stageId       String?
+  onLocationId  String?
+  name          String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  description   String?
+  checkEvents   CheckEvent[]
+  projectSets   ProjectSet[]
+  stage         Stage?       @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  onLocation    OnLocation?  @relation(fields: [onLocationId], references: [id], onDelete: Cascade)
 
   @@unique([stageId, name])
+  @@unique([onLocationId, name])
+  @@index([workspaceId])
   @@map("sets")
+}
+
+// On-location venues (outside a studio). Scoped to a single Project so
+// that a given shoot has its own set of "on location" entries. Once a
+// project has used a location, it appears in the dropdown for reuse on
+// other sets within THAT project.
+model OnLocation {
+  id          String       @id @default(cuid())
+  workspaceId String
+  projectId   String
+  name        String
+  description String?
+  address     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectSets ProjectSet[]
+  sets        Set[]
+
+  @@unique([projectId, name])
+  @@index([workspaceId])
+  @@index([projectId])
+  @@map("on_locations")
 }
 
 model CheckEvent {
@@ -289,6 +319,7 @@ model Project {
   studioId      String?
   eventLocation String?
   projectSets   ProjectSet[]
+  onLocations   OnLocation[]
   studio        Studio?       @relation(fields: [studioId], references: [id])
   workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -297,24 +328,28 @@ model Project {
 }
 
 model ProjectSet {
-  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  workspaceId String
-  projectId   String
-  setId       String
-  stageId     String
-  notes       String?
-  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_projectid_fkey")
-  set         Set       @relation(fields: [setId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_setid_fkey")
-  stage       Stage     @relation(fields: [stageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "project_sets_stageid_fkey")
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_workspaceid_fkey")
+  id           String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  workspaceId  String
+  projectId    String
+  setId        String
+  // Exactly one of stageId / onLocationId is set.
+  stageId      String?
+  onLocationId String?
+  notes        String?
+  createdAt    DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime    @default(now()) @updatedAt @db.Timestamptz(6)
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_projectid_fkey")
+  set          Set         @relation(fields: [setId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_setid_fkey")
+  stage        Stage?      @relation(fields: [stageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "project_sets_stageid_fkey")
+  onLocation   OnLocation? @relation(fields: [onLocationId], references: [id], onDelete: Cascade)
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_sets_workspaceid_fkey")
 
   photos       SetPhoto[]
   layouts      SetLightingLayout[]
 
   @@unique([projectId, setId], map: "project_sets_projectid_setid_key")
   @@index([workspaceId, projectId], map: "project_sets_workspaceid_projectid_idx")
+  @@index([projectId, onLocationId])
   @@map("project_sets")
 }
 
