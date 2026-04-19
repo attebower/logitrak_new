@@ -183,10 +183,14 @@ export const UK_STUDIOS = [
       {
         name: "Main Studio",
         notes: "Separate from Elstree Studios. Purpose-built 2022. Operated by Universal Production Services.",
-        stages: Array.from({ length: 12 }, (_, i) => ({
-          name: `Stage ${i + 1}`,
-          size: "~10,000–40,000 sqft",
-        })).concat([{ name: "Backlot", size: "5 acres", notes: "Exterior filming space." }]),
+        stages: [
+          ...Array.from({ length: 12 }, (_, i) => ({
+            name: `Stage ${i + 1}`,
+            size: "~10,000–40,000 sqft",
+            notes: undefined as string | undefined,
+          })),
+          { name: "Backlot", size: "5 acres", notes: "Exterior filming space." },
+        ],
       },
     ],
   },

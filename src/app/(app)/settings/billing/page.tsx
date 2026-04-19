@@ -14,7 +14,6 @@
  * Owner-only: non-owners see a read-only view without action buttons.
  */
 
-import { AppTopbar } from "@/components/shared/AppTopbar";
 import { PricingCard } from "@/components/shared/PricingCard";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";

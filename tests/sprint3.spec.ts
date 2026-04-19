@@ -158,7 +158,7 @@ test.describe('Settings page', () => {
     ).toBeVisible();
   });
 
-  test('non-owner cannot access settings', async ({ page }) => {
+  test('non-owner cannot access settings', async ({ page: _page }) => {
     // TODO: sign in as operator — middleware should redirect
     // This test is a stub until role-gating is fully wired
   });

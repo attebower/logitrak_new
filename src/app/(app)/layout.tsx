@@ -19,7 +19,7 @@ import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 import type { NavSection } from "@/components/shared/AppSidebar";
 import {
   LayoutDashboard, ArrowLeftRight, List, Plus,
-  FileText, AlertTriangle, Building2, Users, Settings, Clapperboard,
+  FileText, AlertTriangle, Users, Settings, Clapperboard,
 } from "lucide-react";
 
 const NAV_SECTIONS: NavSection[] = [

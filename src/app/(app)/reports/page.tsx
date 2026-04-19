@@ -114,7 +114,7 @@ const ACTIVITY_COLS: ColumnDef[] = [
 
 // -- Equipment expanded detail --
 
-function EquipmentExpandedDetail({ row, workspaceId }: { row: Record<string, unknown>; workspaceId: string }) {
+function _EquipmentExpandedDetail({ row, workspaceId }: { row: Record<string, unknown>; workspaceId: string }) {
   const equipmentId = row.id as string;
   const { data, isLoading } = trpc.equipment.getDetail.useQuery(
     { workspaceId, equipmentId },

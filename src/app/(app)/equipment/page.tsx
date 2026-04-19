@@ -17,7 +17,6 @@ import { ReportTable } from "@/components/shared/ReportTable";
 import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
 import { StatusPill, effectiveStatus } from "@/components/shared/StatusPill";
 import { locationChain } from "@/lib/format";
-import { FormInput, FormSelect } from "@/components/shared/FormField";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { CsvImportModal } from "@/components/shared/CsvImportModal";
@@ -53,17 +52,10 @@ export default function EquipmentPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [selectedIds,  setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds] = useState<Set<string>>(new Set());
   const [detailId,     setDetailId]    = useState<string | null>(null);
-  const [showAddForm,  setShowAddForm] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
   const router = useRouter();
-
-  // Add form state
-  const [newSerial,   setNewSerial]   = useState("");
-  const [newName,     setNewName]     = useState("");
-  const [newCategory, setNewCategory] = useState("");
-  const [addError,    setAddError]    = useState<string | null>(null);
 
   // ── Queries ─────────────────────────────────────────────────────────────
 
