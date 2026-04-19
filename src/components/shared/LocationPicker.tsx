@@ -2,31 +2,27 @@
  * LogiTrak LocationPicker Component
  * Cascading location selector for Check In/Out — Screen 02.
  *
- * Field order (matches spec):
- *   Production (read-only, from workspace context)
- *   Studio / Venue → Stage / Area → Set / Zone
- *   Position Type (4 values from prototype — confirmed by Matt)
- *   Exact Location Description (conditional: shows only for Inside Prop Make / In Prop Dressing)
+ * Field order:
+ *   Project
+ *   Studio / Venue  ─┐ combined via VenuePicker
+ *   Stage or Location ─┘ (includes "On Location" section)
+ *   Set / Zone
+ *   Position Type
+ *   Exact Location Description (conditional)
  *
- * Position Types (from PROTOTYPE_FINDINGS.md — DO NOT use spec values):
- *   - Inside Prop Make
- *   - In Prop Dressing
- *   - On Set
- *   - Rigged to Outside of Set
- *
- * Usage:
- *   <LocationPicker
- *     production="Series 4 — Episode 7"
- *     studios={[{ id: "1", name: "Pinewood — Stage 7", stages: [...] }]}
- *     value={locationValue}
- *     onChange={setLocationValue}
- *   />
+ * On-location support:
+ *   - The stage dropdown has an "On Location" section listing existing
+ *     project-scoped locations + a "+ New on-location venue…" option.
+ *   - When on-location is selected, sets list queries by onLocationId.
  */
 
 "use client";
 
-// useState / useEffect reserved for Sprint 2 cascading tRPC fetch
+import { useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc/client";
+import { VenuePicker, type VenueValue } from "@/components/shared/VenuePicker";
+import { useWorkspace } from "@/lib/workspace-context";
 
 // ── Position types (confirmed from prototype — do not change without checking PROTOTYPE_FINDINGS.md)
 export const POSITION_TYPES = [
@@ -44,7 +40,7 @@ const EXACT_LOCATION_REQUIRED: PositionType[] = [
   "In Prop Dressing",
 ];
 
-// ── Data shapes (passed in from tRPC queries) ─────────────────────────────
+// ── Data shapes ───────────────────────────────────────────────────────────
 
 export interface SetOption {
   id:   string;
@@ -66,12 +62,13 @@ export interface StudioOption {
 // ── Value shape ───────────────────────────────────────────────────────────
 
 export interface LocationValue {
-  projectId?:             string;
-  projectName?:           string;
-  studioId?:              string;
-  stageId?:               string;
-  setId?:                 string;
-  positionType?:          PositionType;
+  projectId?:                string;
+  projectName?:              string;
+  studioId?:                 string;
+  stageId?:                  string;
+  onLocationId?:             string;
+  setId?:                    string;
+  positionType?:             PositionType;
   exactLocationDescription?: string;
 }
 
@@ -86,10 +83,9 @@ export interface ProjectOption {
 // ── Component ─────────────────────────────────────────────────────────────
 
 export interface LocationPickerProps {
-  /** Active projects for the project selector */
   projects:    ProjectOption[];
-  /** Available studios with nested stages and sets */
-  studios:     StudioOption[];
+  /** Unused now that VenuePicker fetches its own data; kept for prop compat. */
+  studios?:    StudioOption[];
   value:       LocationValue;
   onChange:    (value: LocationValue) => void;
   className?:  string;
@@ -97,25 +93,38 @@ export interface LocationPickerProps {
 
 export function LocationPicker({
   projects,
-  studios,
   value,
   onChange,
   className,
 }: LocationPickerProps) {
-  // The project's linked studio (if any) — used to sort the studio list
-  const selectedProject   = projects.find((p) => p.id === value.projectId);
-  const projectStudioId   = selectedProject?.studioId ?? null;
+  const { workspaceId } = useWorkspace();
 
-  // Sort studios: project's studio first (with separator), rest alphabetically
-  const recommendedStudio = projectStudioId ? studios.find((s) => s.id === projectStudioId) : null;
-  const otherStudios      = studios
-    .filter((s) => s.id !== projectStudioId)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const selectedProject = projects.find((p) => p.id === value.projectId);
+  const projectStudioId = selectedProject?.studioId ?? null;
 
-  const selectedStudio = studios.find((s) => s.id === value.studioId);
-  const selectedStage  = selectedStudio?.stages.find((s) => s.id === value.stageId);
-  const stages         = selectedStudio?.stages ?? [];
-  const sets           = selectedStage?.sets ?? [];
+  // Sets under the chosen stage or onLocation
+  const { data: setsByStage } = trpc.location.set.list.useQuery(
+    { workspaceId: workspaceId!, stageId: value.stageId! },
+    { enabled: !!workspaceId && !!value.stageId },
+  );
+  const { data: setsByLoc } = trpc.location.set.list.useQuery(
+    { workspaceId: workspaceId!, onLocationId: value.onLocationId! },
+    { enabled: !!workspaceId && !!value.onLocationId },
+  );
+  const sets = useMemo(() => {
+    if (value.stageId)      return setsByStage ?? [];
+    if (value.onLocationId) return setsByLoc   ?? [];
+    return [];
+  }, [value.stageId, value.onLocationId, setsByStage, setsByLoc]);
+
+  // When the chosen set is no longer in the options (e.g. stage changed),
+  // clear it so the user reselects.
+  useEffect(() => {
+    if (value.setId && !sets.find((s) => s.id === value.setId)) {
+      onChange({ ...value, setId: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sets, value.setId]);
 
   const showExactLocation =
     value.positionType != null &&
@@ -123,23 +132,25 @@ export function LocationPicker({
 
   function handleProjectChange(projectId: string) {
     const project = projects.find((p) => p.id === projectId);
-    // Pre-select the project's studio, clear downstream
     onChange({
       ...value,
       projectId,
-      projectName: project?.name,
-      studioId:    project?.studioId ?? undefined,
-      stageId:     undefined,
-      setId:       undefined,
+      projectName:  project?.name,
+      // Pre-select studio, clear everything downstream
+      studioId:     project?.studioId ?? undefined,
+      stageId:      undefined,
+      onLocationId: undefined,
+      setId:        undefined,
     });
   }
 
-  function handleStudioChange(studioId: string) {
-    onChange({ ...value, studioId, stageId: undefined, setId: undefined });
-  }
-
-  function handleStageChange(stageId: string) {
-    onChange({ ...value, stageId, setId: undefined });
+  function handleVenueChange(v: VenueValue) {
+    onChange({
+      ...value,
+      stageId:      v.stageId      || undefined,
+      onLocationId: v.onLocationId || undefined,
+      setId:        undefined,
+    });
   }
 
   function handleSetChange(setId: string) {
@@ -157,7 +168,6 @@ export function LocationPicker({
 
   return (
     <div className={cn("space-y-3.5", className)}>
-
       {/* Project selector */}
       <FormField label="Project">
         <select
@@ -172,52 +182,25 @@ export function LocationPicker({
         </select>
       </FormField>
 
-      {/* Studio / Venue — recommended project studio at top */}
-      <FormField label="Studio / Venue">
-        <select
-          value={value.studioId ?? ""}
-          onChange={(e) => handleStudioChange(e.target.value)}
-          className={formSelectClass}
-        >
-          <option value="" disabled>Select studio…</option>
-          {recommendedStudio && (
-            <>
-              <option value={recommendedStudio.id}>
-                {recommendedStudio.name}
-              </option>
-              {otherStudios.length > 0 && (
-                <option disabled value="">───────────────</option>
-              )}
-            </>
-          )}
-          {otherStudios.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-      </FormField>
-
-      {/* Stage / Area */}
-      <FormField label="Stage / Area">
-        <select
-          value={value.stageId ?? ""}
-          onChange={(e) => handleStageChange(e.target.value)}
-          disabled={!value.studioId}
-          className={cn(formSelectClass, !value.studioId && "opacity-40 cursor-not-allowed")}
-        >
-          <option value="" disabled>Select stage…</option>
-          {stages.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-      </FormField>
+      {/* Studio / Venue + Stage / Location (shared VenuePicker) */}
+      {value.projectId && workspaceId && (
+        <VenuePicker
+          projectId={value.projectId}
+          workspaceId={workspaceId}
+          projectStudioId={projectStudioId}
+          initialStudioId={value.studioId ?? projectStudioId ?? ""}
+          value={{ stageId: value.stageId ?? "", onLocationId: value.onLocationId ?? "" }}
+          onChange={handleVenueChange}
+        />
+      )}
 
       {/* Set / Zone */}
       <FormField label="Set / Zone">
         <select
           value={value.setId ?? ""}
           onChange={(e) => handleSetChange(e.target.value)}
-          disabled={!value.stageId}
-          className={cn(formSelectClass, !value.stageId && "opacity-40 cursor-not-allowed")}
+          disabled={!value.stageId && !value.onLocationId}
+          className={cn(formSelectClass, !(value.stageId || value.onLocationId) && "opacity-40 cursor-not-allowed")}
         >
           <option value="" disabled>Select set…</option>
           {sets.map((s) => (
@@ -240,7 +223,7 @@ export function LocationPicker({
         </select>
       </FormField>
 
-      {/* Exact Location Description — conditional */}
+      {/* Exact Location Description */}
       {showExactLocation && (
         <FormField label="Exact Description">
           <input

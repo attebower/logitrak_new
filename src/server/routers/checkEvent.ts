@@ -21,6 +21,7 @@ export const checkEventRouter = router({
         productionName: z.string().optional(),
         studioId: z.string().optional(),
         stageId: z.string().optional(),
+        onLocationId: z.string().optional(),
         setId: z.string().optional(),
         positionType: z
           .enum([
@@ -105,6 +106,7 @@ export const checkEventRouter = router({
               productionName: input.productionName,
               studioId: input.studioId,
               stageId: input.stageId,
+              onLocationId: input.onLocationId,
               setId: input.setId,
               positionType: input.positionType,
               positionDescription: input.positionDescription,

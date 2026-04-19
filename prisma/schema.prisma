@@ -238,6 +238,7 @@ model OnLocation {
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   projectSets ProjectSet[]
   sets        Set[]
+  checkEvents CheckEvent[]
 
   @@unique([projectId, name])
   @@index([workspaceId])
@@ -255,6 +256,7 @@ model CheckEvent {
   studioId                 String?
   stageId                  String?
   setId                    String?
+  onLocationId             String?
   positionType             PositionType?
   positionDescription      String?
   createdAt                DateTime       @default(now())
@@ -263,12 +265,14 @@ model CheckEvent {
   set                      Set?           @relation(fields: [setId], references: [id])
   stage                    Stage?         @relation(fields: [stageId], references: [id])
   studio                   Studio?        @relation(fields: [studioId], references: [id])
+  onLocation               OnLocation?    @relation(fields: [onLocationId], references: [id])
   user                     UserProfile    @relation(fields: [userId], references: [id])
   workspace                Workspace      @relation(fields: [workspaceId], references: [id])
 
   @@index([workspaceId, createdAt(sort: Desc)])
   @@index([equipmentId, createdAt(sort: Desc)])
   @@index([workspaceId, productionName, eventType])
+  @@index([onLocationId])
   @@map("check_events")
 }
 

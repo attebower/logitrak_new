@@ -296,6 +296,7 @@ export default function CheckInOutPage() {
       productionName:           outLocation.projectName,
       studioId:                 outLocation.studioId,
       stageId:                  outLocation.stageId,
+      onLocationId:             outLocation.onLocationId,
       setId:                    outLocation.setId,
       positionType,
       exactLocationDescription: outLocation.exactLocationDescription,
@@ -353,8 +354,7 @@ export default function CheckInOutPage() {
 
   const locationComplete =
     !!outLocation.projectId &&
-    !!outLocation.studioId &&
-    !!outLocation.stageId &&
+    !!(outLocation.stageId || outLocation.onLocationId) &&
     !!outLocation.positionType &&
     (outLocation.positionType !== "Inside Prop Make" &&
      outLocation.positionType !== "In Prop Dressing"
