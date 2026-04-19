@@ -98,7 +98,12 @@ export async function POST(req: NextRequest) {
 
     if (printer.outputFormat === "dymo_xml") {
       const zip = new JSZip();
-      zip.file("labels.dymo", buildDymoLabel(commonArgs));
+      // One .label file per serial — DYMO Connect opens them individually
+      // or batch-prints them via File → Print Multiple Labels.
+      for (let n = batch.serialStart; n <= batch.serialEnd; n++) {
+        const xml = buildDymoLabel({ ...commonArgs, serial: n, workspaceSlug: batch.workspace.id });
+        zip.file(`${pad(n)}.label`, xml);
+      }
       zip.file("serials.csv", buildSerialsCsv({
         serialStart: batch.serialStart,
         serialEnd: batch.serialEnd,

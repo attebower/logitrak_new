@@ -137,7 +137,7 @@ export default function GenerateLabelsPage() {
     printer === "brother_ql" || printer === "brother_pt"
       ? "ZIP containing .lbx (opens in P-touch Editor) + serials.csv"
       : currentPrinter?.outputFormat === "dymo_xml"
-      ? "ZIP containing .dymo (opens in DYMO Connect) + serials.csv"
+      ? "ZIP containing one .label file per serial (opens in DYMO Connect)"
       : currentPrinter?.outputFormat === "zpl"
       ? "Zebra ZPL file — send to your printer"
       : "PDF";
@@ -404,7 +404,7 @@ export default function GenerateLabelsPage() {
                         {printer === "brother_ql" || printer === "brother_pt"
                           ? <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.lbx</code>
                           : currentPrinter?.outputFormat === "dymo_xml"
-                          ? <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.dymo</code>
+                          ? <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.label</code>
                           : <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.zpl</code>
                         }
                         {" "}file. Your label software opens with every serial ready to go.
