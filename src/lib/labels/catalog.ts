@@ -7,11 +7,6 @@ export type PrinterType =
   | "brother_ql"
   | "brother_pt"
   | "dymo_labelwriter"
-  | "zebra_zd"
-  | "zebra_zt"
-  | "zebra_zq"
-  | "rollo"
-  | "niimbot"
   | "generic_pdf";
 
 export type LabelDesign =
@@ -73,57 +68,6 @@ export const PRINTERS: Printer[] = [
       { id: "30334",   label: "Small multipurpose (57 × 32mm)",  widthMm: 57,  heightMm: 32, dieCut: true },
       { id: "30252",   label: "Standard address (28 × 89mm)",    widthMm: 89,  heightMm: 28, dieCut: true },
       { id: "30256",   label: "Large shipping (59 × 102mm)",     widthMm: 102, heightMm: 59, dieCut: true },
-    ],
-  },
-  {
-    id: "zebra_zd",
-    brand: "Zebra",
-    label: "Zebra ZD Series (desktop)",
-    outputFormat: "zpl",
-    sizes: [
-      { id: "2x1", label: "Small asset tag (51 × 25mm)",   widthMm: 51,  heightMm: 25 },
-      { id: "4x2", label: "Standard equipment (102 × 51mm)", widthMm: 102, heightMm: 51 },
-      { id: "4x6", label: "Large (102 × 152mm)",           widthMm: 102, heightMm: 152 },
-    ],
-  },
-  {
-    id: "zebra_zt",
-    brand: "Zebra",
-    label: "Zebra ZT Series (industrial)",
-    outputFormat: "zpl",
-    sizes: [
-      { id: "2x1", label: "Small asset tag (51 × 25mm)",   widthMm: 51,  heightMm: 25 },
-      { id: "4x2", label: "Standard equipment (102 × 51mm)", widthMm: 102, heightMm: 51 },
-      { id: "4x6", label: "Large (102 × 152mm)",           widthMm: 102, heightMm: 152 },
-    ],
-  },
-  {
-    id: "zebra_zq",
-    brand: "Zebra",
-    label: "Zebra ZQ Series (mobile)",
-    outputFormat: "zpl",
-    sizes: [
-      { id: "2x1", label: "Small asset tag (51 × 25mm)",   widthMm: 51,  heightMm: 25 },
-      { id: "4x2", label: "Standard equipment (102 × 51mm)", widthMm: 102, heightMm: 51 },
-    ],
-  },
-  {
-    id: "rollo",
-    brand: "Rollo",
-    label: "Rollo X1040",
-    outputFormat: "pdf",
-    sizes: [
-      { id: "4x6", label: "Standard 4×6 (102 × 152mm)",   widthMm: 102, heightMm: 152 },
-    ],
-  },
-  {
-    id: "niimbot",
-    brand: "Niimbot",
-    label: "Niimbot (PDF export)",
-    outputFormat: "pdf",
-    sizes: [
-      { id: "small", label: "Small (50 × 14mm)",  widthMm: 50, heightMm: 14 },
-      { id: "medium", label: "Medium (50 × 30mm)", widthMm: 50, heightMm: 30 },
     ],
   },
   {

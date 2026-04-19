@@ -2,7 +2,7 @@
  * Client-side label print trigger.
  *
  * After the server reserves the batch, we POST to /api/labels/generate with
- * the outputFormat choice. The API returns the binary file (PDF / ZPL / ZIP)
+ * the outputFormat choice. The API returns the binary file (PDF or ZIP)
  * and we trigger a download (or open-in-browser for PDF auto-print).
  */
 

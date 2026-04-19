@@ -4,7 +4,7 @@
  * Body: { batchId: string }
  *
  * Looks up the reserved batch, generates the correct file format, returns
- * a binary download (PDF, ZPL, or ZIP depending on printer + output choice).
+ * a binary download (PDF or ZIP depending on printer + output choice).
  *
  * The client has already called `labels.reserveBatch` which burnt the
  * serials. This route is pure generation — never reserves.
@@ -17,7 +17,6 @@ import JSZip from "jszip";
 import { generateLabelPdf } from "@/lib/labels/pdf";
 import { buildDymoLabel, buildSerialsCsv, buildDymoReadme } from "@/lib/labels/dymo";
 import { buildBrotherLbx, buildBrotherReadme } from "@/lib/labels/brother";
-import { buildZpl } from "@/lib/labels/zpl";
 import { getPrinter, getLabelSize, type PrinterType, type LabelDesign, type CodeType } from "@/lib/labels/catalog";
 
 export const runtime = "nodejs";
@@ -85,17 +84,6 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Native output per printer family
-    if (printer.outputFormat === "zpl") {
-      const zpl = buildZpl(commonArgs);
-      const filename = `logitrak-labels-${pad(batch.serialStart)}-${pad(batch.serialEnd)}.zpl`;
-      return new NextResponse(zpl, {
-        headers: {
-          "Content-Type": "application/zpl",
-          "Content-Disposition": contentDispositionHeader(filename),
-        },
-      });
-    }
-
     if (printer.outputFormat === "dymo_xml") {
       const zip = new JSZip();
       // Single template .label file (placeholder serial 00000) + CSV.

@@ -10,7 +10,7 @@
  *   4. Print / Download
  *
  * On confirm we reserve serials atomically (server-side) and output
- * PDF/ZPL/DYMO XML. Serials are burned — non-reversible.
+ * PDF or DYMO/Brother bundles. Serials are burned — non-reversible.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -73,7 +73,7 @@ export default function GenerateLabelsPage() {
       setSizeId(p.sizes[0]?.id ?? "");
     }
     // If printer has no native format, force PDF
-    const hasNative = p.outputFormat !== "pdf" || printer === "brother_ql" || printer === "brother_pt";
+    const hasNative = p.outputFormat === "dymo_xml" || printer === "brother_ql" || printer === "brother_pt";
     if (!hasNative) setOutputFormat("pdf");
     else setOutputFormat("native");
   }, [printer, sizeId]);
@@ -130,7 +130,6 @@ export default function GenerateLabelsPage() {
   // Helper: does the chosen printer have a native/smart output format (non-PDF)?
   const hasNativeFormat =
     currentPrinter?.outputFormat === "dymo_xml" ||
-    currentPrinter?.outputFormat === "zpl" ||
     printer === "brother_ql" || printer === "brother_pt";
 
   const nativeDescription =
@@ -138,8 +137,6 @@ export default function GenerateLabelsPage() {
       ? "ZIP containing .lbx (opens in P-touch Editor) + serials.csv"
       : currentPrinter?.outputFormat === "dymo_xml"
       ? "ZIP containing one .label file per serial (opens in DYMO Connect)"
-      : currentPrinter?.outputFormat === "zpl"
-      ? "Zebra ZPL file — send to your printer"
       : "PDF";
 
   if (stateLoading || !state) {
@@ -319,7 +316,6 @@ export default function GenerateLabelsPage() {
                   </div>
                   <p className="text-[11px] text-grey">
                     Output: {currentPrinter?.outputFormat === "pdf" && "PDF (opens your print dialog)"}
-                    {currentPrinter?.outputFormat === "zpl" && "ZPL file (send to your Zebra printer)"}
                     {currentPrinter?.outputFormat === "dymo_xml" && "DYMO Connect (opens in the DYMO desktop app)"}
                     {" — "}remembered for next time.
                   </p>
@@ -426,12 +422,6 @@ export default function GenerateLabelsPage() {
                         Needs <a href="https://www.brother.co.uk/support/downloads" target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">P-touch Editor 5+</a> installed (free from Brother).
                       </p>
                     </>
-                  ) : currentPrinter?.outputFormat === "zpl" && outputFormat === "native" ? (
-                    <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
-                      <li>Click Generate — you&apos;ll get a single <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.zpl</code> file.</li>
-                      <li>Send it to your Zebra printer (drag-drop in your spooler, or pipe over TCP to port 9100).</li>
-                      <li>Labels come out. Stick them on kit, scan via Add Equipment.</li>
-                    </ol>
                   ) : (
                     <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
                       <li>Click Generate — a PDF opens in a new tab.</li>
