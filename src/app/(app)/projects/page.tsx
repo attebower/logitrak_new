@@ -12,7 +12,7 @@
 
 import { useState } from "react";
 import {
-  Plus, Film, Zap, Building2,
+  Plus, Film, Zap, Calendar, ChevronDown, Building2,
   MapPin, Layers, Package, X, ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -514,7 +514,31 @@ function SetEquipmentDrawer({
   );
 }
 
-// ── Project Detail Panel ──────────────────────────────────────────────────
+// ── Metadata field (header card) ────────────────────────────────
+
+function MetaField({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?:  React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+        {label}
+      </div>
+      <div className="flex items-center gap-1.5 text-[13px] text-surface-dark">
+        {icon && <span className="text-slate-400">{icon}</span>}
+        <span className="truncate">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Project Detail Panel ─────────────────────────────────────────────────
 
 function ProjectDetail({
   projectId,
@@ -566,12 +590,24 @@ function ProjectDetail({
   const projStatus = project.status as ProjectStatus;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      {/* Project header — compact single row, then metadata + description */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between gap-4 mb-2">
-          <h1 className="text-[18px] font-semibold text-surface-dark leading-tight">{project.name}</h1>
-          <div className="relative">
+    <div className="flex-1 overflow-y-auto p-6 space-y-5">
+      {/* ── Header card ── */}
+      <section className="bg-white rounded-panel border border-grey-mid p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-brand-blue/10 flex items-center justify-center shrink-0 mt-0.5">
+              {type === "film_tv"
+                ? <Film size={18} className="text-brand-blue" />
+                : <Zap  size={18} className="text-brand-blue" />}
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-[20px] font-bold text-surface-dark leading-tight truncate">{project.name}</h1>
+              <p className="text-[12px] text-slate-500 mt-1">
+                {type === "film_tv" ? "Film & TV production" : "Event"}
+              </p>
+            </div>
+          </div>
+          <div className="relative shrink-0">
             <button
               onClick={() => setShowStatusMenu((v) => !v)}
               className={cn(
@@ -580,6 +616,7 @@ function ProjectDetail({
               )}
             >
               {STATUS_LABELS[projStatus]}
+              <ChevronDown size={11} />
             </button>
             {showStatusMenu && (
               <div className="absolute right-0 top-8 z-10 bg-white border border-grey-mid rounded-panel shadow-md py-1 w-32">
@@ -599,36 +636,50 @@ function ProjectDetail({
             )}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-500">
-          <span className="flex items-center gap-1.5">
-            {type === "film_tv" ? <Film size={11} /> : <Zap size={11} />}
-            {type === "film_tv" ? "Film & TV" : "Events"}
-          </span>
+
+        {/* Metadata grid */}
+        <div className="mt-5 pt-5 border-t border-grey-mid grid grid-cols-2 md:grid-cols-4 gap-4">
           {project.studio && (
-            <span className="flex items-center gap-1.5">
-              <Building2 size={11} /> {project.studio.name}
-            </span>
+            <MetaField
+              label="Studio"
+              value={project.studio.name}
+              icon={<Building2 size={11} />}
+            />
           )}
           {project.eventLocation && (
-            <span className="flex items-center gap-1.5">
-              <Building2 size={11} /> {project.eventLocation}
-            </span>
+            <MetaField
+              label="Location"
+              value={project.eventLocation}
+              icon={<Building2 size={11} />}
+            />
           )}
-          {project.startDate && (
-            <span>Starts {fmtDate(project.startDate)}</span>
-          )}
+          <MetaField
+            label="Start Date"
+            value={fmtDate(project.startDate) ?? "—"}
+            icon={<Calendar size={11} />}
+          />
+          <MetaField
+            label="Status"
+            value={STATUS_LABELS[projStatus]}
+          />
         </div>
-        {project.description && (
-          <p className="text-[13px] text-surface-dark mt-3">{project.description}</p>
-        )}
-      </div>
 
-      {/* Sets section */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
+        {project.description && (
+          <div className="mt-5 pt-5 border-t border-grey-mid">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Description
+            </p>
+            <p className="text-[13px] text-surface-dark">{project.description}</p>
+          </div>
+        )}
+      </section>
+
+      {/* ── Sets card ── */}
+      <section className="bg-white rounded-panel border border-grey-mid">
+        <div className="px-5 py-4 border-b border-grey-mid flex items-center justify-between">
           <div>
-            <h2 className="text-[15px] font-bold text-surface-dark flex items-center gap-2">
-              <Layers size={15} className="text-brand-blue" />
+            <h2 className="text-[14px] font-semibold text-surface-dark flex items-center gap-2">
+              <Layers size={14} className="text-brand-blue" />
               Sets
             </h2>
             <p className="text-[12px] text-slate-400 mt-0.5">
@@ -636,17 +687,17 @@ function ProjectDetail({
             </p>
           </div>
           {isManager && (
-            <Button variant="secondary" onClick={() => setShowAddSet(true)}>
-              <Plus size={13} className="mr-1" />
+            <Button variant="secondary" size="sm" onClick={() => setShowAddSet(true)}>
+              <Plus size={12} className="mr-1" />
               Add Set
             </Button>
           )}
         </div>
 
         {setsLoading ? (
-          <div className="text-[13px] text-slate-400">Loading sets…</div>
+          <div className="px-5 py-6 text-[13px] text-slate-400">Loading sets…</div>
         ) : !projectSets?.length ? (
-          <div className="bg-white rounded-panel border border-grey-mid border-dashed p-8 text-center">
+          <div className="px-5 py-10 text-center">
             <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
               <MapPin size={18} className="text-slate-400" />
             </div>
@@ -655,18 +706,18 @@ function ProjectDetail({
               Add the sets this production is using to track equipment by location.
             </p>
             {isManager && (
-              <Button variant="secondary" onClick={() => setShowAddSet(true)}>
-                <Plus size={13} className="mr-1" />
+              <Button variant="secondary" size="sm" onClick={() => setShowAddSet(true)}>
+                <Plus size={12} className="mr-1" />
                 Add First Set
               </Button>
             )}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="divide-y divide-grey-mid">
             {projectSets.map((ps) => (
               <div
                 key={ps.id}
-                className="bg-white rounded-panel border border-grey-mid p-4 flex items-center gap-4 group hover:border-brand-blue/40 transition-colors cursor-pointer"
+                className="px-5 py-3.5 flex items-center gap-4 group hover:bg-grey-light/60 transition-colors cursor-pointer"
                 onClick={() => setActiveSetDrawer({
                   setId:     ps.set.id,
                   setName:   ps.set.name,
@@ -765,6 +816,17 @@ export default function ProjectsPage() {
     { enabled: !!workspaceId }
   );
 
+  const utils = trpc.useUtils();
+  const updateListStatus = trpc.project.updateStatus.useMutation({
+    onSuccess: () => void utils.project.list.invalidate(),
+  });
+  const [statusMenuId, setStatusMenuId] = useState<string | null>(null);
+
+  function fmtListDate(d: Date | null) {
+    if (!d) return null;
+    return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+
   return (
     <>
       <AppTopbar
@@ -800,24 +862,68 @@ export default function ProjectsPage() {
                 {projects.map((p) => {
                   const isActive = selectedId === p.id;
                   const status   = p.status as ProjectStatus;
-                  // Small coloured dot per status — much quieter than a pill
-                  const dotColour =
-                    status === "active"  ? "bg-status-green" :
-                    status === "wrapped" ? "bg-slate-300"    :
-                                           "bg-slate-200";
+                  const type     = p.industryType as IndustryType;
                   return (
                     <li key={p.id}>
                       <button
                         onClick={() => setSelectedId(p.id)}
                         className={cn(
-                          "w-full flex items-center gap-2 px-2 py-1.5 rounded-btn text-[13px] transition-colors text-left",
-                          isActive
-                            ? "bg-brand-blue/10 text-brand-blue font-semibold"
-                            : "text-surface-dark hover:bg-grey-light"
+                          "w-full text-left px-2 py-2.5 rounded-btn transition-colors group",
+                          isActive ? "bg-brand-blue/10" : "hover:bg-grey-light"
                         )}
                       >
-                        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", dotColour)} />
-                        <span className="truncate flex-1">{p.name}</span>
+                        <div className="flex items-start gap-2">
+                          <span className={cn("mt-0.5 shrink-0", isActive ? "text-brand-blue" : "text-slate-400")}>
+                            {type === "film_tv" ? <Film size={13} /> : <Zap size={13} />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className={cn(
+                              "text-[13px] font-medium truncate leading-snug",
+                              isActive ? "text-brand-blue" : "text-surface-dark"
+                            )}>
+                              {p.name}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={cn(
+                                "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold",
+                                STATUS_STYLES[status]
+                              )}>
+                                {STATUS_LABELS[status]}
+                              </span>
+                              {p.startDate && (
+                                <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
+                                  <Calendar size={9} />
+                                  {fmtListDate(p.startDate)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setStatusMenuId(statusMenuId === p.id ? null : p.id)}
+                              className="p-1 rounded text-slate-300 hover:text-slate-500 hover:bg-grey-light"
+                              title="Change status"
+                            >
+                              <ChevronDown size={11} />
+                            </button>
+                            {statusMenuId === p.id && (
+                              <div className="absolute right-0 top-6 z-20 bg-white border border-grey-mid rounded-panel shadow-md py-1 w-28">
+                                {(["active", "wrapped", "archived"] as ProjectStatus[]).map((s) => (
+                                  <button
+                                    key={s}
+                                    onClick={() => {
+                                      updateListStatus.mutate({ workspaceId: workspaceId!, projectId: p.id, status: s });
+                                      setStatusMenuId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-[12px] text-surface-dark hover:bg-grey-light"
+                                  >
+                                    {STATUS_LABELS[s]}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </button>
                     </li>
                   );
