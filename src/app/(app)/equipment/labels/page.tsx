@@ -1,166 +1,421 @@
 "use client";
 
 /**
- * QR Label Print page — Sprint 4
+ * Generate Labels — the friendly label creation flow.
  *
- * Route: /equipment/labels?ids=id1,id2,id3
+ * User journey:
+ *   1. How many do you need? (quantity input, next serial shown)
+ *   2. Pick a design (5 thumbnails, live preview)
+ *   3. Pick your printer (brand → size)
+ *   4. Print / Download
  *
- * Generates a print-optimised grid of QR sticker labels.
- * Each label: QR code (encoding the serial), serial number, equipment name.
- * Print CSS: 4-up per A4 page, no browser headers/footers.
- *
- * Equipment fetched via trpc.equipment.get for each ID.
- * QR codes generated client-side with the `qrcode` package.
+ * On confirm we reserve serials atomically (server-side) and output
+ * PDF/ZPL/DYMO XML. Serials are burned — non-reversible.
  */
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
-import QRCode from "qrcode";
+import { LabelPreview } from "@/components/labels/LabelPreview";
+import {
+  PRINTERS, LABEL_DESIGNS, getPrinter, getLabelSize, formatSerial,
+  type PrinterType, type LabelDesign, type CodeType,
+} from "@/lib/labels/catalog";
+import { printLabelBatch } from "@/lib/labels/print";
+import { ChevronLeft, ChevronRight, Tag, QrCode, Barcode as BarcodeIcon, Printer, Download } from "lucide-react";
 
-// ── Label data shape ──────────────────────────────────────────────────────
-
-interface LabelData {
-  id:     string;
-  serial: string;
-  name:   string;
-  qrUrl:  string; // data URL from qrcode
-}
-
-// ── QR generation ─────────────────────────────────────────────────────────
-
-async function generateQR(serial: string): Promise<string> {
-  return QRCode.toDataURL(serial, {
-    width:         200,
-    margin:        1,
-    color: {
-      dark:  "#0F172A",
-      light: "#FFFFFF",
-    },
-  });
-}
-
-// ── Component ─────────────────────────────────────────────────────────────
-
-export default function LabelsPage() {
+export default function GenerateLabelsPage() {
   const { workspaceId } = useWorkspace();
-  const searchParams   = useSearchParams();
-  const ids = (searchParams.get("ids") ?? "").split(",").filter(Boolean);
 
-  const [labels,  setLabels]  = useState<LabelData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const utils = trpc.useUtils();
+  const { data: state, isLoading: stateLoading, refetch } = trpc.labels.state.useQuery({ workspaceId });
 
+  const reserveMutation = trpc.labels.reserveBatch.useMutation();
+
+  // Form state
+  const [quantity, setQuantity] = useState<number>(10);
+  const [design, setDesign] = useState<LabelDesign>("standard");
+  const [codeType, setCodeType] = useState<CodeType>("qr");
+  const [printer, setPrinter] = useState<PrinterType>("generic_pdf");
+  const [sizeId, setSizeId] = useState<string>("");
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [printing, setPrinting] = useState(false);
+  const [lastBatch, setLastBatch] = useState<{ serialStart: number; serialEnd: number } | null>(null);
+
+  // When the workspace state loads, pre-fill printer / size / design from saved prefs
   useEffect(() => {
-    if (ids.length === 0) { setLoading(false); return; }
-
-    async function buildLabels() {
-      const results: LabelData[] = [];
-      for (const id of ids) {
-        try {
-          const eq = await utils.equipment.get.fetch({ workspaceId, equipmentId: id });
-          const qrUrl = await generateQR(eq.serial);
-          results.push({ id: eq.id, serial: eq.serial, name: eq.name, qrUrl });
-        } catch {
-          // skip items that can't be fetched
+    if (!state) return;
+    if (state.lastPrinterType) {
+      const p = getPrinter(state.lastPrinterType as PrinterType);
+      if (p) {
+        setPrinter(p.id);
+        if (state.lastLabelSize && p.sizes.find((s) => s.id === state.lastLabelSize)) {
+          setSizeId(state.lastLabelSize);
+        } else {
+          setSizeId(p.sizes[0]?.id ?? "");
         }
       }
-      setLabels(results);
-      setLoading(false);
+    } else {
+      setSizeId(getPrinter(printer)?.sizes[0]?.id ?? "");
     }
-
-    void buildLabels();
+    if (state.lastLabelDesign) setDesign(state.lastLabelDesign as LabelDesign);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [state?.lastPrinterType, state?.lastLabelSize, state?.lastLabelDesign]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen text-grey">
-        Generating labels…
-      </div>
-    );
+  // When printer changes, reset size to its first option (only if current size isn't valid)
+  useEffect(() => {
+    const p = getPrinter(printer);
+    if (!p) return;
+    if (!p.sizes.find((s) => s.id === sizeId)) {
+      setSizeId(p.sizes[0]?.id ?? "");
+    }
+  }, [printer, sizeId]);
+
+  const currentPrinter = useMemo(() => getPrinter(printer), [printer]);
+  const currentSize = useMemo(
+    () => (sizeId ? getLabelSize(printer, sizeId) : undefined),
+    [printer, sizeId]
+  );
+
+  const nextSerial = state?.nextSerial ?? 1;
+  const serialStart = nextSerial;
+  const serialEnd = nextSerial + quantity - 1;
+  const previewSerial = formatSerial(serialStart + previewIndex);
+
+  // Clamp preview index when quantity changes
+  useEffect(() => {
+    if (previewIndex >= quantity) setPreviewIndex(Math.max(0, quantity - 1));
+  }, [quantity, previewIndex]);
+
+  const canPrint = !!currentSize && quantity > 0 && quantity <= 200 && !printing;
+
+  async function handlePrint(asFile: boolean) {
+    if (!currentSize || !currentPrinter || !state) return;
+    setPrinting(true);
+    try {
+      const batch = await reserveMutation.mutateAsync({
+        workspaceId,
+        quantity,
+        design,
+        codeType,
+        labelType: "blank",
+        printerType: printer,
+        labelSize: sizeId,
+      });
+
+      // Client-side print/download
+      await printLabelBatch({
+        serialStart: batch.serialStart,
+        serialEnd: batch.serialEnd,
+        design,
+        codeType,
+        orgName: state.workspaceName,
+        size: currentSize,
+        printer: currentPrinter,
+        asFile,
+      });
+
+      setLastBatch({ serialStart: batch.serialStart, serialEnd: batch.serialEnd });
+      setPreviewIndex(0);
+      await refetch();
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong generating the labels. Please try again.");
+    } finally {
+      setPrinting(false);
+    }
   }
 
-  if (labels.length === 0) {
+  if (stateLoading || !state) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4 text-grey">
-        <p>No equipment found for the provided IDs.</p>
-        <Button variant="secondary" size="sm" onClick={() => window.history.back()}>← Back</Button>
-      </div>
+      <>
+        <AppTopbar title="Generate Labels" />
+        <div className="flex-1 p-6 text-grey text-[13px]">Loading…</div>
+      </>
     );
   }
 
   return (
     <>
-      {/* Print action bar — hidden when printing */}
-      <div className="print:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-grey-mid px-6 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-[15px] font-bold text-surface-dark">QR Labels</h1>
-          <p className="text-[12px] text-grey">{labels.length} label{labels.length !== 1 ? "s" : ""} — 4 per A4 page</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => window.history.back()}>← Back</Button>
-          <Button variant="primary" size="sm" onClick={() => window.print()}>🖨 Print</Button>
-        </div>
-      </div>
-
-      {/* Print styles — injected inline */}
-      <style>{`
-        @media print {
-          @page {
-            size: A4;
-            margin: 10mm;
-          }
-          body { margin: 0; }
-          .print\\:hidden { display: none !important; }
-          .label-grid { padding-top: 0 !important; }
+      <AppTopbar
+        title="Generate Labels"
+        actions={
+          <Button variant="secondary" size="sm" asChild>
+            <Link href="/equipment">← Equipment</Link>
+          </Button>
         }
-      `}</style>
+      />
 
-      {/* Label grid */}
-      <div className="label-grid pt-16 print:pt-0 p-8 print:p-0">
-        <div className="grid grid-cols-2 print:grid-cols-2 gap-4 print:gap-[6mm]">
-          {labels.map((label) => (
-            <QRLabel key={label.id} label={label} />
-          ))}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-6xl mx-auto">
+
+          {/* Confirmation banner after printing */}
+          {lastBatch && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-card px-5 py-4 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-green-500 text-white flex items-center justify-center">✓</div>
+              <div className="flex-1">
+                <div className="text-[14px] font-semibold text-green-900">
+                  Labels ready — serials {formatSerial(lastBatch.serialStart)} to {formatSerial(lastBatch.serialEnd)}
+                </div>
+                <div className="text-[12px] text-green-700">
+                  Stick them on your kit, then scan them in via Add Equipment.
+                </div>
+              </div>
+              <Link href="/equipment/new" className="text-[12px] font-semibold text-green-900 hover:underline">
+                Add Equipment →
+              </Link>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+            {/* ── LEFT: form ── */}
+            <div className="lg:col-span-3 space-y-6">
+
+              {/* Step 1 — Quantity */}
+              <section className="bg-white border border-grey-mid rounded-card shadow-card">
+                <header className="px-5 py-4 border-b border-grey-mid">
+                  <h2 className="text-[14px] font-semibold text-surface-dark flex items-center gap-2">
+                    <span className="h-5 w-5 rounded-full bg-brand-blue text-white text-[11px] font-bold flex items-center justify-center">1</span>
+                    How many labels do you need?
+                  </h2>
+                </header>
+                <div className="p-5 space-y-3">
+                  <div className="flex items-end gap-4">
+                    <div>
+                      <label className="text-[11px] text-grey block mb-1">Quantity</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={quantity}
+                        onChange={(e) => setQuantity(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
+                        className="w-28 h-11 px-3 text-[18px] font-bold rounded-md border border-grey-mid focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 outline-none"
+                      />
+                    </div>
+                    <div className="text-[12px] text-grey pb-3">
+                      Serials <span className="font-semibold text-surface-dark">{formatSerial(serialStart)}</span> to{" "}
+                      <span className="font-semibold text-surface-dark">{formatSerial(serialEnd)}</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-grey">
+                    Next serial is <span className="font-semibold">{formatSerial(nextSerial)}</span> — we pick up where you left off.
+                    Max 200 per batch.
+                  </p>
+                </div>
+              </section>
+
+              {/* Step 2 — Design */}
+              <section className="bg-white border border-grey-mid rounded-card shadow-card">
+                <header className="px-5 py-4 border-b border-grey-mid">
+                  <h2 className="text-[14px] font-semibold text-surface-dark flex items-center gap-2">
+                    <span className="h-5 w-5 rounded-full bg-brand-blue text-white text-[11px] font-bold flex items-center justify-center">2</span>
+                    Pick a design
+                  </h2>
+                </header>
+                <div className="p-5">
+                  {/* Code type toggle */}
+                  <div className="mb-4 inline-flex bg-grey-light rounded-md p-1">
+                    <button
+                      type="button"
+                      onClick={() => setCodeType("qr")}
+                      className={`h-8 px-3 rounded text-[12px] font-semibold flex items-center gap-1.5 transition-colors ${codeType === "qr" ? "bg-white shadow-sm text-surface-dark" : "text-grey hover:text-surface-dark"}`}
+                    >
+                      <QrCode className="h-3.5 w-3.5" /> QR Code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCodeType("barcode")}
+                      className={`h-8 px-3 rounded text-[12px] font-semibold flex items-center gap-1.5 transition-colors ${codeType === "barcode" ? "bg-white shadow-sm text-surface-dark" : "text-grey hover:text-surface-dark"}`}
+                    >
+                      <BarcodeIcon className="h-3.5 w-3.5" /> Barcode
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {LABEL_DESIGNS.map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => setDesign(d.id)}
+                        className={`text-left rounded-[10px] border p-3 transition-all ${design === d.id
+                          ? "border-brand-blue bg-brand-blue/[0.04] ring-2 ring-brand-blue/30"
+                          : "border-grey-mid hover:border-brand-blue/40"}`}
+                      >
+                        <div className="flex items-center justify-center bg-grey-light rounded mb-2 py-2 min-h-[80px]">
+                          <LabelPreview
+                            widthMm={50}
+                            heightMm={30}
+                            design={d.id}
+                            codeType={codeType}
+                            serial={formatSerial(nextSerial)}
+                            orgName={state.workspaceName}
+                            equipmentName="Arri SkyPanel"
+                            scale={1.2}
+                          />
+                        </div>
+                        <div className="text-[12px] font-semibold text-surface-dark">{d.label}</div>
+                        <div className="text-[11px] text-grey mt-0.5">{d.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* Step 3 — Printer */}
+              <section className="bg-white border border-grey-mid rounded-card shadow-card">
+                <header className="px-5 py-4 border-b border-grey-mid">
+                  <h2 className="text-[14px] font-semibold text-surface-dark flex items-center gap-2">
+                    <span className="h-5 w-5 rounded-full bg-brand-blue text-white text-[11px] font-bold flex items-center justify-center">3</span>
+                    Pick your printer
+                  </h2>
+                </header>
+                <div className="p-5 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-grey block mb-1">Printer</label>
+                      <select
+                        value={printer}
+                        onChange={(e) => setPrinter(e.target.value as PrinterType)}
+                        className="w-full h-10 px-3 rounded-md border border-grey-mid text-[13px] focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 outline-none bg-white"
+                      >
+                        {Object.entries(groupByBrand(PRINTERS)).map(([brand, items]) => (
+                          <optgroup key={brand} label={brand}>
+                            {items.map((p) => (
+                              <option key={p.id} value={p.id}>{p.label}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-grey block mb-1">Label size</label>
+                      <select
+                        value={sizeId}
+                        onChange={(e) => setSizeId(e.target.value)}
+                        className="w-full h-10 px-3 rounded-md border border-grey-mid text-[13px] focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 outline-none bg-white"
+                      >
+                        {currentPrinter?.sizes.map((s) => (
+                          <option key={s.id} value={s.id}>{s.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-grey">
+                    Output: {currentPrinter?.outputFormat === "pdf" && "PDF (opens your print dialog)"}
+                    {currentPrinter?.outputFormat === "zpl" && "ZPL file (send to your Zebra printer)"}
+                    {currentPrinter?.outputFormat === "dymo_xml" && "DYMO Connect (opens in the DYMO desktop app)"}
+                    {" — "}remembered for next time.
+                  </p>
+                </div>
+              </section>
+
+              {/* Step 4 — Print */}
+              <section className="bg-white border border-grey-mid rounded-card shadow-card">
+                <div className="p-5 flex items-center gap-3">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    disabled={!canPrint}
+                    onClick={() => handlePrint(false)}
+                    className="flex-1"
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    {printing ? "Generating…" : `Print ${quantity} label${quantity !== 1 ? "s" : ""}`}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    disabled={!canPrint}
+                    onClick={() => handlePrint(true)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
+                <p className="px-5 pb-4 text-[11px] text-grey">
+                  Hitting print locks in serials {formatSerial(serialStart)}–{formatSerial(serialEnd)} — they cannot be reused.
+                </p>
+              </section>
+
+            </div>
+
+            {/* ── RIGHT: live preview ── */}
+            <div className="lg:col-span-2">
+              <div className="lg:sticky lg:top-6 bg-white border border-grey-mid rounded-card shadow-card">
+                <header className="px-5 py-4 border-b border-grey-mid flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-grey" />
+                  <h2 className="text-[14px] font-semibold text-surface-dark">Live preview</h2>
+                  {currentSize && (
+                    <span className="ml-auto text-[11px] text-grey">
+                      {currentSize.widthMm} × {currentSize.heightMm}mm
+                    </span>
+                  )}
+                </header>
+                <div className="p-5 flex flex-col items-center">
+                  <div className="bg-grey-light rounded-[10px] p-6 flex items-center justify-center min-h-[220px] w-full">
+                    {currentSize && (
+                      <LabelPreview
+                        widthMm={currentSize.widthMm}
+                        heightMm={currentSize.heightMm}
+                        design={design}
+                        codeType={codeType}
+                        serial={previewSerial}
+                        orgName={state.workspaceName}
+                        equipmentName="Arri SkyPanel"
+                        scale={previewScaleFor(currentSize.widthMm, currentSize.heightMm)}
+                      />
+                    )}
+                  </div>
+
+                  {/* Preview navigator */}
+                  {quantity > 1 && (
+                    <div className="mt-4 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewIndex(Math.max(0, previewIndex - 1))}
+                        disabled={previewIndex === 0}
+                        className="h-8 w-8 rounded-md border border-grey-mid flex items-center justify-center hover:bg-grey-light disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <div className="text-[12px] text-grey font-medium tabular-nums min-w-[60px] text-center">
+                        {previewIndex + 1} of {quantity}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewIndex(Math.min(quantity - 1, previewIndex + 1))}
+                        disabled={previewIndex >= quantity - 1}
+                        className="h-8 w-8 rounded-md border border-grey-mid flex items-center justify-center hover:bg-grey-light disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </>
   );
 }
 
-// ── QR label card ─────────────────────────────────────────────────────────
+function groupByBrand(printers: typeof PRINTERS) {
+  const out: Record<string, typeof printers> = {};
+  for (const p of printers) {
+    if (!out[p.brand]) out[p.brand] = [];
+    out[p.brand].push(p);
+  }
+  return out;
+}
 
-function QRLabel({ label }: { label: LabelData }) {
-  return (
-    <div
-      className="bg-white border-2 border-surface-dark rounded-[8px] p-4 flex flex-col items-center text-center print:break-inside-avoid"
-      style={{ minHeight: "140px" }}
-    >
-      {/* QR code */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={label.qrUrl}
-        alt={`QR code for ${label.serial}`}
-        className="w-24 h-24 print:w-[50mm] print:h-[50mm]"
-      />
-
-      {/* Serial */}
-      <p className="text-serial text-surface-dark text-[16px] mt-2 tracking-[0.2em]">
-        {label.serial}
-      </p>
-
-      {/* Equipment name — truncated */}
-      <p className="text-[11px] text-grey mt-0.5 leading-tight line-clamp-2 max-w-[160px]">
-        {label.name}
-      </p>
-
-      {/* LogiTrak watermark */}
-      <p className="text-[9px] text-grey/50 mt-2 tracking-wide">
-        LogiTrak
-      </p>
-    </div>
-  );
+/** Pick a CSS-px-per-mm scale so the preview fits comfortably in the panel. */
+function previewScaleFor(widthMm: number, heightMm: number): number {
+  const maxWidth = 300;
+  const maxHeight = 200;
+  return Math.min(maxWidth / widthMm, maxHeight / heightMm);
 }

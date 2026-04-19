@@ -179,7 +179,7 @@ export default function EquipmentPage() {
               disabled={selectedIds.size === 0}
               onClick={() => {
                 const ids = Array.from(selectedIds).join(",");
-                router.push(`/equipment/labels?ids=${ids}`);
+                router.push(`/equipment/labels/reprint?ids=${ids}`);
               }}
             >
               🖨 QR Labels{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}

@@ -21,6 +21,11 @@ model Workspace {
   trialEndsAt          DateTime?
   maxUsers             Int                   @default(5)
   maxAssets            Int                   @default(500)
+  lastSerialNumber     Int                   @default(0)
+  lastPrinterType      String?
+  lastLabelSize        String?
+  lastLabelDesign      String?
+  printerIp            String?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   activityEvents       ActivityEvent[]
@@ -39,8 +44,29 @@ model Workspace {
   studios              Studio[]
   invitations          WorkspaceInvitation[]
   members              WorkspaceUser[]
+  labelBatches         LabelBatch[]
 
   @@map("workspaces")
+}
+
+model LabelBatch {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  serialStart      Int
+  serialEnd        Int
+  quantity         Int
+  design           String   // standard | compact | barcode_focus | full_detail | high_visibility
+  codeType         String   // qr | barcode
+  labelType        String   // blank | assigned
+  printerType      String
+  labelSize        String
+  fileUrl          String?
+  createdById      String?
+  createdAt        DateTime @default(now())
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@map("label_batches")
 }
 
 model UserProfile {

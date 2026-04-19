@@ -17,7 +17,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import type { BadgeProps } from "@/components/ui/badge";
 import {
   LayoutDashboard, CheckCircle2, ArrowLeftRight, AlertTriangle,
-  RotateCcw, Plus, List, Wrench,
+  RotateCcw, Plus, List, Wrench, PackageOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -77,8 +77,13 @@ export default function DashboardPage() {
   );
 
   const { data: activity, isLoading: activityLoading } = trpc.activity.list.useQuery(
-    { workspaceId, limit: 20 },
+    { workspaceId, limit: 5 },
     { refetchInterval: 30_000 }
+  );
+
+  const { data: lowStock, isLoading: lowStockLoading } = trpc.dashboard.lowStock.useQuery(
+    { workspaceId },
+    { refetchInterval: 60_000 }
   );
 
   return (
@@ -131,6 +136,46 @@ export default function DashboardPage() {
             changeColor="red"
           />
         </StatGrid>
+
+        {/* Low Stock alert box — only shown when there are flagged products */}
+        {(lowStockLoading || (lowStock && lowStock.length > 0)) && (
+          <div className="bg-white rounded-card border border-amber-200 shadow-card overflow-hidden mb-6">
+            <div className="px-5 py-4 border-b border-amber-200 flex items-center gap-2">
+              <PackageOpen className="h-4 w-4 text-amber-500" />
+              <h2 className="text-[14px] font-semibold text-surface-dark">Low Stock</h2>
+              {!lowStockLoading && lowStock && (
+                <span className="ml-auto text-[11px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded-full">
+                  {lowStock.length} {lowStock.length === 1 ? "item" : "items"}
+                </span>
+              )}
+            </div>
+            {lowStockLoading ? (
+              <div className="divide-y divide-grey-mid">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 px-5 py-3 animate-pulse">
+                    <div className="flex-1 h-3 bg-grey-mid rounded" />
+                    <div className="w-24 h-3 bg-grey-mid rounded" />
+                    <div className="w-16 h-4 bg-grey-mid rounded-full" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="divide-y divide-grey-mid">
+                {lowStock?.map((item) => (
+                  <div key={item.productId} className="flex items-center gap-3 px-5 py-3">
+                    <div className="flex-1 text-[13px] font-medium text-surface-dark">{item.name}</div>
+                    <div className="text-[12px] text-grey">
+                      {item.available} of {item.total} available
+                    </div>
+                    <div className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                      {item.percentAvailable}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Activity feed */}
