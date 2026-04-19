@@ -3,7 +3,7 @@
 /**
  * Reports page — Sprint 3
  *
- * Tabs: Status | Checked Out | Damaged | By Location | Activity Log
+ * Tabs: Overview | Checked Out | Damaged | By Location
  * Each tab: ReportFilterBar + ReportTable wired to trpc.reports.*
  * CSV export: downloads tRPC result as a CSV file client-side
  */
@@ -29,7 +29,6 @@ const TABS = [
   { id: "checked-out", label: "Checked Out" },
   { id: "damaged",     label: "Damaged" },
   { id: "by-location", label: "By Location" },
-  { id: "activity",    label: "Activity Log" },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -103,14 +102,6 @@ const BY_LOCATION_COLS: ColumnDef[] = [
   { key: "location", label: "Location", width: "w-48" },
   { key: "since",    label: "Since",    width: "w-28" },
 ];
-
-const ACTIVITY_COLS: ColumnDef[] = [
-  { key: "time",      label: "Time",      width: "w-28" },
-  { key: "actor",     label: "User",      width: "w-40" },
-  { key: "eventType", label: "Event",     width: "w-40" },
-  { key: "entity",    label: "Equipment", width: "w-full" },
-];
-
 
 // -- Equipment expanded detail --
 
@@ -430,25 +421,6 @@ export default function ReportsPage() {
     };
   }));
 
-  // ── Activity Log tab ─────────────────────────────────────────────────
-
-  const { data: activityData } = trpc.reports.activityLog.useQuery(
-    {
-      workspaceId,
-      startDate: filters.dateFrom,
-      endDate:   filters.dateTo,
-      limit:     100,
-    },
-    { enabled: activeTab === "activity" }
-  );
-  const activityRows = (activityData?.items ?? []).map((e) => ({
-    id:        e.id,
-    time:      relTime(e.createdAt),
-    actor:     e.actor?.displayName ?? e.actor?.email ?? "System",
-    eventType: e.eventType.replace(/_/g, " "),
-    entity:    e.entityType === "equipment" ? e.entityId : "—",
-  }));
-
   // ── Active tab data / columns ─────────────────────────────────────────
 
   const tabConfig: Record<TabId, { columns: ColumnDef[]; rows: Record<string, unknown>[]; filename: string }> = {
@@ -456,7 +428,6 @@ export default function ReportsPage() {
     "checked-out": { columns: CHECKED_OUT_COLS, rows: checkedOutRows,  filename: "logitrak-checked-out.csv" },
     "damaged":     { columns: DAMAGED_COLS,     rows: damagedRows,     filename: "logitrak-damaged.csv" },
     "by-location": { columns: BY_LOCATION_COLS, rows: byLocationRows,  filename: "logitrak-by-location.csv" },
-    "activity":    { columns: ACTIVITY_COLS,    rows: activityRows,    filename: "logitrak-activity.csv" },
   };
 
   const { columns, rows, filename } = tabConfig[activeTab];
@@ -542,7 +513,7 @@ export default function ReportsPage() {
               rows={rows}
               title={TABS.find((t) => t.id === activeTab)?.label ?? ""}
               onExport={() => downloadCsv(filename, rows, columns)}
-              onRowClick={activeTab !== "activity" ? (row) => setDetailId(row.id as string) : undefined}
+              onRowClick={(row) => setDetailId(row.id as string)}
             />
           )}
         </div>
@@ -571,13 +542,6 @@ type OverviewData = {
   underRepair: number;
   repaired: number;
   retiredCount: number;
-  recentActivity: Array<{
-    id: string;
-    eventType: string;
-    description?: string | null;
-    createdAt: Date | string;
-    actor?: { displayName?: string | null; email?: string | null } | null;
-  }>;
 };
 
 function OverviewPanel({ data }: { data: OverviewData | undefined }) {
@@ -619,35 +583,6 @@ function OverviewPanel({ data }: { data: OverviewData | undefined }) {
         ))}
       </div>
 
-      {/* Recent activity */}
-      <div className="bg-white rounded-card border border-grey-mid">
-        <div className="px-4 py-3 border-b border-grey-mid flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold text-surface-dark">Recent Activity</h3>
-          <span className="text-[11px] text-grey">Last 10 events</span>
-        </div>
-        <div className="divide-y divide-grey-mid">
-          {data.recentActivity.length === 0 ? (
-            <div className="px-4 py-6 text-center text-[12px] text-grey">No activity yet</div>
-          ) : (
-            data.recentActivity.map((ev) => (
-              <div key={ev.id} className="px-4 py-3 flex items-center gap-3">
-                <div className="flex-1">
-                  <div className="text-[13px] text-surface-dark">
-                    <span className="font-medium">{ev.actor?.displayName ?? ev.actor?.email ?? "System"}</span>
-                    <span className="text-grey ml-1">{ev.eventType.replace(/_/g, " ")}</span>
-                  </div>
-                  {ev.description && (
-                    <div className="text-[11px] text-grey mt-0.5">{ev.description}</div>
-                  )}
-                </div>
-                <span className="text-[11px] text-grey whitespace-nowrap">
-                  {new Date(ev.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
     </div>
   );
 }
