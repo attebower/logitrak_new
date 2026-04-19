@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Routes restricted to Admin role only
-const ADMIN_ROUTES = ["/admin", "/team", "/settings"];
+const ADMIN_ROUTES = ["/admin", "/team", "/settings", "/locations"];
 // Routes where write actions are blocked for read-only role
 // (enforced at the API layer by Sage; middleware only handles page-level gating)
 
@@ -49,9 +49,9 @@ export async function middleware(request: NextRequest) {
       const { data: membership } = await supabase
         .from("workspace_users")
         .select("role")
-        .eq("user_id", user.id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
+        .eq("userId", user.id)
+        .eq("isActive", true)
+        .order("createdAt", { ascending: true })
         .limit(1)
         .maybeSingle();
 

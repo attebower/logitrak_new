@@ -57,6 +57,7 @@ export const workspaceRouter = router({
         name: workspace.name,
         slug: workspace.slug,
         industryType: workspace.industryType,
+        department: workspace.department ?? null,
         subscriptionTier: workspace.subscriptionTier,
         subscriptionStatus: workspace.subscriptionStatus,
         trialEndsAt: workspace.trialEndsAt,
@@ -74,6 +75,7 @@ export const workspaceRouter = router({
       z.object({
         name: z.string().min(2),
         industryType: z.nativeEnum(IndustryType),
+        department:   z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -90,6 +92,7 @@ export const workspaceRouter = router({
             name: input.name,
             slug,
             industryType: input.industryType,
+            department:   input.department?.toLowerCase(),
             members: {
               create: {
                 userId: ctx.session.user.id,
@@ -100,6 +103,21 @@ export const workspaceRouter = router({
             },
           },
         });
+
+        // Seed department default categories if we know the department
+        if (input.department) {
+          const { getDepartmentCategories } = await import("@/lib/department-catalog");
+          const defaults = getDepartmentCategories(input.department);
+          if (defaults.length > 0) {
+            await ctx.prisma.equipmentCategory.createMany({
+              data: defaults.map((d) => ({
+                workspaceId: workspace.id,
+                name:        d.name,
+                groupName:   d.groupName,
+              })),
+            });
+          }
+        }
 
         // Seed UK studios reference data into the new workspace
         for (const studio of UK_STUDIOS_SEED) {
@@ -135,21 +153,33 @@ export const workspaceRouter = router({
         workspaceId: z.string(),
         name: z.string().min(2).optional(),
         industryType: z.nativeEnum(IndustryType).optional(),
+        department:   z.string().nullable().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       requireRole(ctx.userRole, ADMIN_ROLES);
 
-      const data: { name?: string; slug?: string; industryType?: IndustryType } = {};
-      if (input.name !== undefined) {
+      // Load current workspace first so we can skip no-op updates
+      const current = await ctx.prisma.workspace.findUnique({
+        where: { id: ctx.workspaceId! },
+        select: { name: true, slug: true, industryType: true, department: true },
+      });
+      if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Workspace not found" });
+
+      const data: { name?: string; slug?: string; industryType?: IndustryType; department?: string | null } = {};
+      if (input.name !== undefined && input.name !== current.name) {
         data.name = input.name;
-        data.slug = input.name
+        const newSlug = input.name
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "");
+        if (newSlug !== current.slug) data.slug = newSlug;
       }
       if (input.industryType !== undefined) {
         data.industryType = input.industryType;
+      }
+      if (input.department !== undefined) {
+        data.department = input.department ? input.department.toLowerCase() : null;
       }
 
       if (Object.keys(data).length === 0) {
@@ -160,7 +190,7 @@ export const workspaceRouter = router({
         return await ctx.prisma.workspace.update({
           where: { id: ctx.workspaceId! },
           data,
-          select: { id: true, name: true, slug: true, industryType: true },
+          select: { id: true, name: true, slug: true, industryType: true, department: true },
         });
       } catch (err: unknown) {
         if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "P2002") {

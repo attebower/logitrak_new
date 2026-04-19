@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Equipment Registry — wired to live tRPC data.
+ * Equipment Register — wired to live tRPC data.
  *
  * trpc.equipment.list   → table (search, status filter, pagination)
  * trpc.equipment.create → add equipment form
@@ -15,6 +15,8 @@ import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { ReportTable } from "@/components/shared/ReportTable";
 import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
+import { StatusPill, effectiveStatus } from "@/components/shared/StatusPill";
+import { locationChain } from "@/lib/format";
 import { FormInput, FormSelect } from "@/components/shared/FormField";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -25,32 +27,32 @@ import type { EquipmentDetail } from "@/components/shared/EquipmentDetailPanel";
 
 // ── Column definitions (matches reports page style) ───────────────────────
 
-// Derive a single display status — damage always takes precedence over availability.
-function effectiveStatus(status: string, damageStatus: string): { label: string; colour: string } {
-  if (damageStatus === "damaged")      return { label: "Damaged",      colour: "text-status-red" };
-  if (damageStatus === "under_repair") return { label: "Under Repair", colour: "text-status-amber" };
-  if (damageStatus === "repaired")     return { label: "Repaired",     colour: "text-status-teal" };
-  if (status === "checked_out")        return { label: "Issued",       colour: "text-status-amber" };
-  if (status === "retired")            return { label: "Retired",      colour: "text-grey" };
-  return { label: "Available", colour: "text-status-green" };
-}
-
 const EQUIPMENT_COLS: ColumnDef[] = [
   { key: "serial",   label: "Serial",   width: "w-28" },
   { key: "name",     label: "Name",     width: "w-full" },
   { key: "category", label: "Category", width: "w-40",
     render: (row) => <span className="text-[13px] text-grey">{String(row.category ?? "—")}</span> },
   { key: "status",   label: "Status",   width: "w-36",
-    render: (row) => {
-      const { label, colour } = effectiveStatus(String(row.status ?? ""), String(row.damageStatus ?? "normal"));
-      return <span className={`text-[13px] font-medium ${colour}`}>{label}</span>;
-    }},
+    render: (row) => <StatusPill size="sm" status={effectiveStatus(String(row.status ?? ""), String(row.damageStatus ?? "normal"))} /> },
+];
+
+type StatusFilter = "all" | "available" | "issued" | "damaged" | "under_repair" | "repaired" | "retired";
+
+const FILTER_TABS: { id: StatusFilter; label: string }[] = [
+  { id: "all",          label: "All"          },
+  { id: "available",    label: "Available"    },
+  { id: "issued",       label: "Issued"       },
+  { id: "damaged",      label: "Damaged"      },
+  { id: "under_repair", label: "Under Repair" },
+  { id: "repaired",     label: "Repaired"     },
+  { id: "retired",      label: "Retired"      },
 ];
 
 export default function EquipmentPage() {
   const { workspaceId } = useWorkspace();
 
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedIds,  setSelectedIds] = useState<Set<string>>(new Set());
   const [detailId,     setDetailId]    = useState<string | null>(null);
   const [showAddForm,  setShowAddForm] = useState(false);
@@ -101,7 +103,7 @@ export default function EquipmentPage() {
 
   const items = useMemo(() => {
     if (!listData?.items) return [];
-    return listData.items.map((eq) => ({
+    const mapped = listData.items.map((eq) => ({
       id:           eq.id,
       serial:       eq.serial,
       name:         eq.name,
@@ -109,28 +111,65 @@ export default function EquipmentPage() {
       status:       eq.status,
       damageStatus: eq.damageStatus,
     }));
+    if (statusFilter === "all") return mapped;
+    return mapped.filter((r) => {
+      const ds = r.damageStatus;
+      const s  = r.status;
+      if (statusFilter === "available")    return s === "available" && (!ds || ds === "normal");
+      if (statusFilter === "issued")       return s === "checked_out" && (!ds || ds === "normal");
+      if (statusFilter === "damaged")      return ds === "damaged";
+      if (statusFilter === "under_repair") return ds === "under_repair";
+      if (statusFilter === "repaired")     return ds === "repaired";
+      if (statusFilter === "retired")      return s === "retired";
+      return true;
+    });
+  }, [listData, statusFilter]);
+
+  // Count items per filter for chip badges
+  const statusCounts = useMemo(() => {
+    const all = listData?.items ?? [];
+    const count = (pred: (e: typeof all[number]) => boolean) => all.filter(pred).length;
+    return {
+      all: all.length,
+      available:    count((e) => e.status === "available" && (!e.damageStatus || e.damageStatus === "normal")),
+      issued:       count((e) => e.status === "checked_out" && (!e.damageStatus || e.damageStatus === "normal")),
+      damaged:      count((e) => e.damageStatus === "damaged"),
+      under_repair: count((e) => e.damageStatus === "under_repair"),
+      repaired:     count((e) => e.damageStatus === "repaired"),
+      retired:      count((e) => e.status === "retired"),
+    };
   }, [listData]);
 
   const detail: EquipmentDetail | null = useMemo(() => {
     if (!detailData) return null;
     const eq = detailData;
-    const lastOut = eq.checkEvents.find((ce) => ce.eventType === "check_out");
-    const currentLocation = lastOut
-      ? [lastOut.studio?.name, lastOut.stage?.name, lastOut.set?.name, lastOut.positionType, lastOut.exactLocationDescription].filter(Boolean).join(" → ")
+    // Most recent event (checkEvents ordered desc by createdAt)
+    const latest = eq.checkEvents[0];
+    const isCurrentlyIssued = eq.status === "checked_out" && latest?.eventType === "check_out";
+    const currentLocation = isCurrentlyIssued && latest
+      ? locationChain([latest.studio?.name, latest.stage?.name, latest.set?.name, latest.positionType, latest.exactLocationDescription])
       : undefined;
     return {
       id:       eq.id,
       serial:   eq.serial,
       type:     eq.name,
       category: eq.category?.name ?? "Uncategorised",
-      status:   (eq.damageStatus === "damaged" ? "damaged" : eq.damageStatus === "under_repair" ? "under-repair" : eq.damageStatus === "repaired" ? "repaired" : eq.status === "checked_out" ? "checked-out" : "available") as EquipmentDetail["status"],
+      status:   effectiveStatus(eq.status, eq.damageStatus),
       notes:    eq.notes ?? undefined,
       location: currentLocation,
       addedAt:  eq.createdAt.toISOString(),
+      issuedAt: isCurrentlyIssued && latest ? new Date(latest.createdAt).toISOString() : null,
       checkHistory: eq.checkEvents.map((ce) => ({
         id:        ce.id,
         type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
-        location:  [ce.studio?.name, ce.stage?.name, ce.set?.name, ce.positionType, ce.exactLocationDescription].filter(Boolean).join(" → "),
+        location:  locationChain([ce.studio?.name, ce.stage?.name, ce.set?.name, ce.positionType, ce.exactLocationDescription]),
+        locationParts: {
+          studio:   ce.studio?.name ?? null,
+          stage:    ce.stage?.name ?? null,
+          set:      ce.set?.name ?? null,
+          position: ce.positionType ?? null,
+          exact:    ce.exactLocationDescription ?? null,
+        },
         checkedBy: ce.user?.displayName ?? ce.user?.email ?? "Unknown",
         timestamp: new Date(ce.createdAt).toISOString(),
       })),
@@ -139,7 +178,7 @@ export default function EquipmentPage() {
         description: dr.description ?? "",
         reportedBy:  dr.reporter?.displayName ?? dr.reporter?.email ?? "Unknown",
         timestamp:   new Date(dr.reportedAt).toISOString(),
-        status:      "damaged" as const,
+        status:      (dr.repairLogs?.[0] ? "repaired" : "damaged") as "damaged" | "repaired",
         resolution:  dr.repairLogs?.[0]?.description,
         repairedBy:  dr.repairLogs?.[0]?.repairedByName,
         repairedAt:  dr.repairLogs?.[0]?.repairedAt ? new Date(dr.repairLogs[0].repairedAt).toISOString() : undefined,
@@ -165,7 +204,7 @@ export default function EquipmentPage() {
   return (
     <>
       <AppTopbar
-        title="Equipment Registry"
+        title="Equipment Register"
         actions={
           <>
             <Button variant="secondary" size="sm" onClick={() => setShowCsvModal(true)}>Import CSV</Button>
@@ -180,28 +219,53 @@ export default function EquipmentPage() {
             >
               🖨 QR Labels{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
             </Button>
-            <Button variant="primary" size="sm" onClick={() => setShowAddForm(true)}>
-              + Add Equipment
+            <Button variant="primary" size="sm" onClick={() => router.push("/equipment/new")}>
+              + New Entry
             </Button>
           </>
         }
       />
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Search bar */}
-        <div className="px-6 py-4 bg-white border-b border-grey-mid flex items-center gap-4">
+        {/* Filter tab bar — same style as Reports page */}
+        <div className="bg-white border-b border-grey-mid px-6 flex gap-0 overflow-x-auto">
+          {FILTER_TABS.map((tab) => {
+            const count = statusCounts[tab.id] ?? 0;
+            const isActive = statusFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={[
+                  "px-4 py-3.5 text-[13px] font-medium border-b-2 transition-colors whitespace-nowrap",
+                  isActive
+                    ? "border-brand-blue text-brand-blue"
+                    : "border-transparent text-grey hover:text-surface-dark",
+                ].join(" ")}
+              >
+                {tab.label}
+                <span className={`ml-1.5 text-[11px] ${isActive ? "text-brand-blue" : "text-grey"}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search */}
+        <div className="px-6 py-4 bg-white border-b border-grey-mid">
           <input
             type="search"
             placeholder="Search serial, type, or category…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 min-w-[200px] bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+            className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
           />
         </div>
 
-        {/* Add equipment form */}
+        {/* Add equipment form — kept for backwards compatibility, now hidden */}
         {showAddForm && (
-          <form onSubmit={handleAddSubmit} className="mx-6 mt-4 bg-white rounded-card border border-grey-mid p-5">
+          <form onSubmit={handleAddSubmit} className="mx-6 mt-4 bg-white rounded-card border border-grey-mid p-5 hidden">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-[14px] font-semibold text-surface-dark">Add Equipment</h2>
               <button type="button" onClick={() => setShowAddForm(false)} className="text-grey hover:text-surface-dark text-lg">×</button>
@@ -260,7 +324,7 @@ export default function EquipmentPage() {
             <ReportTable
               columns={EQUIPMENT_COLS}
               rows={items}
-              title="Equipment Registry"
+              title="Equipment Register"
               emptyMessage={search ? "No equipment matches your search." : "No equipment yet — add your first item above."}
               onRowClick={(row) => setDetailId(row.id as string)}
             />

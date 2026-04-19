@@ -13,6 +13,7 @@ model Workspace {
   name                 String
   slug                 String                @unique
   industryType         IndustryType          @default(film_tv)
+  department           String?               // Film/TV department: lighting, camera, sound, grip, art, costume, props, sfx, locations, production, other
   subscriptionTier     SubscriptionTier      @default(starter)
   subscriptionStatus   SubscriptionStatus    @default(trialing)
   stripeCustomerId     String?
@@ -27,6 +28,7 @@ model Workspace {
   damageReports        DamageReport[]
   equipment            Equipment[]
   equipmentCategories  EquipmentCategory[]
+  equipmentProducts    EquipmentProduct[]
   projectSets          ProjectSet[]
   projects             Project[]
   repairLogs           RepairLog[]
@@ -95,14 +97,15 @@ model WorkspaceInvitation {
 }
 
 model EquipmentCategory {
-  id          String      @id @default(cuid())
+  id          String             @id @default(cuid())
   workspaceId String
   name        String
   groupName   String
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
   equipment   Equipment[]
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  products    EquipmentProduct[]
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, name])
   @@map("equipment_categories")
@@ -114,6 +117,7 @@ model Equipment {
   serial        String
   name          String
   categoryId    String?
+  productId     String?
   status        EquipmentStatus    @default(available)
   damageStatus  DamageStatus       @default(normal)
   notes         String?
@@ -124,6 +128,7 @@ model Equipment {
   checkEvents   CheckEvent[]
   damageReports DamageReport[]
   category      EquipmentCategory? @relation(fields: [categoryId], references: [id])
+  product       EquipmentProduct?  @relation(fields: [productId], references: [id])
   parent        Equipment?         @relation("EquipmentKits", fields: [parentId], references: [id])
   children      Equipment[]        @relation("EquipmentKits")
   workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -133,7 +138,29 @@ model Equipment {
   @@index([workspaceId, status])
   @@index([workspaceId, damageStatus])
   @@index([workspaceId, categoryId])
+  @@index([workspaceId, productId])
   @@map("equipment")
+}
+
+/// Shared product catalog per workspace. Growing library of canonical product
+/// definitions (name, category, description) used to quickly add equipment
+/// without retyping and to keep naming consistent.
+model EquipmentProduct {
+  id            String             @id @default(cuid())
+  workspaceId   String
+  name          String             // Canonical display name, e.g. "Arri SkyPanel S60-C"
+  searchKey     String             // Lowercase, stripped name used for dedupe + search
+  categoryId    String?
+  description   String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  equipment     Equipment[]
+  category      EquipmentCategory? @relation(fields: [categoryId], references: [id])
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, searchKey])
+  @@index([workspaceId, name])
+  @@map("equipment_products")
 }
 
 model Studio {

@@ -183,7 +183,7 @@ export function LocationPicker({
           {recommendedStudio && (
             <>
               <option value={recommendedStudio.id}>
-                ★ {recommendedStudio.name} — project default
+                {recommendedStudio.name}
               </option>
               {otherStudios.length > 0 && (
                 <option disabled value="">───────────────</option>

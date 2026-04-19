@@ -70,7 +70,7 @@ export default function BillingPage() {
   if (isLoading) {
     return (
       <>
-        <AppTopbar title="Billing" />
+        
         <div className="flex-1 flex items-center justify-center">
           <div className="text-[13px] text-grey">Loading subscription…</div>
         </div>
@@ -81,7 +81,7 @@ export default function BillingPage() {
   if (subError || !sub) {
     return (
       <>
-        <AppTopbar title="Billing" />
+        
         <div className="flex-1 p-6">
           <div className="bg-status-red-light border border-status-red/20 rounded-card px-5 py-4 text-[13px] text-status-red">
             Unable to load subscription information. {subError?.message}
@@ -103,7 +103,7 @@ export default function BillingPage() {
 
   return (
     <>
-      <AppTopbar title="Billing" />
+      
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl space-y-6">

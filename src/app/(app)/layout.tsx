@@ -18,7 +18,7 @@ import { WorkspaceProvider } from "@/lib/workspace-context";
 import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 import type { NavSection } from "@/components/shared/AppSidebar";
 import {
-  LayoutDashboard, ArrowLeftRight, List,
+  LayoutDashboard, ArrowLeftRight, List, Plus,
   FileText, AlertTriangle, Building2, Users, Settings, Clapperboard,
 } from "lucide-react";
 
@@ -28,8 +28,14 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard",    href: "/dashboard",  icon: <LayoutDashboard className="h-4 w-4" /> },
       { label: "Check In/Out", href: "/checkinout", icon: <ArrowLeftRight className="h-4 w-4" /> },
-      { label: "Equipment",    href: "/equipment",  icon: <List className="h-4 w-4" /> },
       { label: "Projects",     href: "/projects",   icon: <Clapperboard className="h-4 w-4" /> },
+    ],
+  },
+  {
+    label: "Equipment",
+    items: [
+      { label: "Equipment Register", href: "/equipment",     icon: <List className="h-4 w-4" /> },
+      { label: "Add Equipment",      href: "/equipment/new", icon: <Plus className="h-4 w-4" /> },
     ],
   },
   {
@@ -42,7 +48,6 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Manage",
     items: [
-      { label: "Locations", href: "/locations", icon: <Building2 className="h-4 w-4" /> },
       { label: "Team",      href: "/team",      icon: <Users className="h-4 w-4" /> },
       { label: "Settings",  href: "/settings",  icon: <Settings className="h-4 w-4" /> },
     ],

@@ -13,6 +13,101 @@ function requireRole(userRole: WorkspaceRole | null, allowed: WorkspaceRole[]) {
 }
 
 export const equipmentRouter = router({
+  /** Suggest the next free 5-digit serial for this workspace. */
+  nextSerial: workspaceProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .query(async ({ ctx }) => {
+      // Highest existing numeric serial
+      const max = await ctx.prisma.equipment.findFirst({
+        where: { workspaceId: ctx.workspaceId! },
+        orderBy: { serial: "desc" },
+        select: { serial: true },
+      });
+      const n = max ? parseInt(max.serial, 10) : 0;
+      const next = Math.max(1, n + 1);
+      if (next > 99999) throw new TRPCError({ code: "BAD_REQUEST", message: "Serial pool exhausted" });
+      return {
+        last:  max?.serial ?? null,
+        next:  String(next).padStart(5, "0"),
+      };
+    }),
+
+  /** Check whether a specific 5-digit serial is free. */
+  checkSerial: workspaceProcedure
+    .input(z.object({ workspaceId: z.string(), serial: z.string().regex(/^\d{5}$/) }))
+    .query(async ({ ctx, input }) => {
+      const existing = await ctx.prisma.equipment.findUnique({
+        where: { workspaceId_serial: { workspaceId: ctx.workspaceId!, serial: input.serial } },
+        select: { id: true, name: true },
+      });
+      return { available: !existing, existing: existing ?? null };
+    }),
+
+  /** Create a batch of equipment for a single product/name. */
+  createBatch: workspaceProcedure
+    .input(z.object({
+      workspaceId: z.string(),
+      productId:   z.string().optional(),
+      name:        z.string().min(1),
+      categoryId:  z.string().optional(),
+      serials:     z.array(z.string().regex(/^\d{5}$/)).min(1).max(500),
+      notes:       z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      // Check none of the serials are already taken
+      const conflicts = await ctx.prisma.equipment.findMany({
+        where: {
+          workspaceId: ctx.workspaceId!,
+          serial: { in: input.serials },
+        },
+        select: { serial: true },
+      });
+      if (conflicts.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Serials already in use: ${conflicts.map((c) => c.serial).join(", ")}`,
+        });
+      }
+
+      // Dedupe in the batch itself
+      const unique = new Set(input.serials);
+      if (unique.size !== input.serials.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Duplicate serials in batch" });
+      }
+
+      const userId = ctx.session.user.id;
+
+      return ctx.prisma.$transaction(async (tx) => {
+        const created = [];
+        for (const serial of input.serials) {
+          const eq = await tx.equipment.create({
+            data: {
+              workspaceId: ctx.workspaceId!,
+              serial,
+              name:       input.name,
+              categoryId: input.categoryId,
+              productId:  input.productId,
+              notes:      input.notes,
+            },
+          });
+          created.push(eq);
+          await tx.activityEvent.create({
+            data: {
+              workspaceId: ctx.workspaceId!,
+              actorId:     userId,
+              eventType:   "equipment_created",
+              description: `Created ${serial} (${input.name})`,
+              entityType:  "equipment",
+              entityId:    eq.id,
+            },
+          });
+        }
+        return { created: created.length, items: created };
+      });
+    }),
+
   list: workspaceProcedure
     .input(
       z.object({

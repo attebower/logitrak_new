@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, workspaceProcedure } from "../trpc";
 import { type WorkspaceRole } from "@prisma/client";
+import { getDepartmentCategories, DEPARTMENT_LABELS } from "@/lib/department-catalog";
 
 const ADMIN_ROLES: WorkspaceRole[] = ["owner", "admin"];
 
@@ -55,5 +56,66 @@ export const categoryRouter = router({
           groupName: input.groupName,
         },
       });
+    }),
+
+  /**
+   * Install the default category catalog for a department.
+   * Safe to re-run: skips categories that already exist (by workspaceId + name).
+   * If `department` is omitted, uses the workspace's current department field.
+   */
+  installDefaults: workspaceProcedure
+    .input(z.object({
+      workspaceId: z.string(),
+      department:  z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      const workspace = await ctx.prisma.workspace.findFirst({
+        where: { id: ctx.workspaceId! },
+        select: { department: true },
+      });
+      if (!workspace) throw new TRPCError({ code: "NOT_FOUND", message: "Workspace not found" });
+
+      const dept = (input.department ?? workspace.department ?? "").toLowerCase();
+      const defaults = getDepartmentCategories(dept);
+      if (defaults.length === 0) {
+        return {
+          installed: 0,
+          skipped:   0,
+          department: dept || null,
+          message:   dept
+            ? `No default categories defined for ${DEPARTMENT_LABELS[dept as keyof typeof DEPARTMENT_LABELS] ?? dept}`
+            : "No department set on this workspace",
+        };
+      }
+
+      // Find existing category names to skip
+      const existing = await ctx.prisma.equipmentCategory.findMany({
+        where: {
+          workspaceId: ctx.workspaceId!,
+          name: { in: defaults.map((d) => d.name) },
+        },
+        select: { name: true },
+      });
+      const existingSet = new Set(existing.map((c) => c.name));
+
+      const toCreate = defaults.filter((d) => !existingSet.has(d.name));
+
+      if (toCreate.length > 0) {
+        await ctx.prisma.equipmentCategory.createMany({
+          data: toCreate.map((d) => ({
+            workspaceId: ctx.workspaceId!,
+            name:        d.name,
+            groupName:   d.groupName,
+          })),
+        });
+      }
+
+      return {
+        installed:  toCreate.length,
+        skipped:    existingSet.size,
+        department: dept,
+      };
     }),
 });

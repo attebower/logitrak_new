@@ -14,6 +14,8 @@ import { AppTopbar } from "@/components/shared/AppTopbar";
 import { ReportTable } from "@/components/shared/ReportTable";
 import { ReportFilterBar } from "@/components/shared/ReportFilterBar";
 import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
+import { StatusPill, effectiveStatus as sharedEffectiveStatus } from "@/components/shared/StatusPill";
+import { locationChain } from "@/lib/format";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { ColumnDef } from "@/components/shared/ReportTable";
@@ -23,7 +25,7 @@ import type { EquipmentDetail } from "@/components/shared/EquipmentDetailPanel";
 // ── Tab definition ────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: "status",      label: "Status" },
+  { id: "overview",    label: "Overview" },
   { id: "checked-out", label: "Checked Out" },
   { id: "damaged",     label: "Damaged" },
   { id: "by-location", label: "By Location" },
@@ -65,37 +67,14 @@ function relTime(d: Date | string | null | undefined): string {
 
 // ── Column definitions ────────────────────────────────────────────────────
 
-// Derive a single display status — damage always takes precedence over availability.
-function effectiveStatus(status: string, damageStatus: string): { label: string; colour: string } {
-  if (damageStatus === "damaged")      return { label: "Damaged",      colour: "text-status-red" };
-  if (damageStatus === "under_repair") return { label: "Under Repair", colour: "text-status-amber" };
-  if (damageStatus === "repaired")     return { label: "Repaired",     colour: "text-status-teal" };
-  if (status === "checked_out")        return { label: "Issued",       colour: "text-status-amber" };
-  if (status === "retired")            return { label: "Retired",      colour: "text-grey" };
-  return { label: "Available", colour: "text-status-green" };
-}
+const statusPill = (s: string, ds?: string) => (
+  <StatusPill size="sm" status={sharedEffectiveStatus(s, ds ?? "normal")} />
+);
 
-const STATUS_COLS: ColumnDef[] = [
-  { key: "serial",   label: "Serial",   width: "w-28" },
-  { key: "name",     label: "Name",     width: "w-full" },
-  { key: "category", label: "Category", width: "w-40",
-    render: (row) => <span className="text-[13px] text-grey">{String(row.category ?? "—")}</span> },
-  { key: "status",   label: "Status",   width: "w-36",
-    render: (row) => {
-      const { label, colour } = effectiveStatus(String(row.status ?? ""), String(row.damageStatus ?? "normal"));
-      return <span className={`text-[13px] font-medium ${colour}`}>{label}</span>;
-    }},
-];
-
-const statusText = (s: string, ds?: string) => {
-  const { label, colour } = effectiveStatus(s, ds ?? "normal");
-  return <span className={`text-[13px] font-medium ${colour}`}>{label}</span>;
-};
-
-const damageText = (ds: string) => {
-  if (ds === "normal" || !ds) return <span className="text-[13px] text-grey">—</span>;
-  const colour = ds === "damaged" ? "text-status-red" : ds === "under_repair" ? "text-status-amber" : "text-status-teal";
-  return <span className={`text-[13px] font-medium ${colour}`}>{ds.replace(/_/g, " ")}</span>;
+const damagePill = (ds: string) => {
+  if (!ds || ds === "normal") return <span className="text-[13px] text-grey">—</span>;
+  const status = ds === "damaged" ? "damaged" : ds === "under_repair" ? "under_repair" : "repaired";
+  return <StatusPill size="sm" status={status} />;
 };
 
 const categoryText = (c: string) => <span className="text-[13px] text-grey">{c || "—"}</span>;
@@ -112,7 +91,7 @@ const CHECKED_OUT_COLS: ColumnDef[] = [
 const DAMAGED_COLS: ColumnDef[] = [
   { key: "serial",       label: "Serial",      width: "w-28" },
   { key: "name",         label: "Name",        width: "w-full" },
-  { key: "damageStatus", label: "Status",      width: "w-36", render: (row) => damageText(String(row.damageStatus ?? "")) },
+  { key: "damageStatus", label: "Status",      width: "w-36", render: (row) => damagePill(String(row.damageStatus ?? "")) },
   { key: "reportedBy",   label: "Reported By", width: "w-40" },
   { key: "reportedAt",   label: "Reported",    width: "w-28" },
 ];
@@ -120,7 +99,7 @@ const DAMAGED_COLS: ColumnDef[] = [
 const BY_LOCATION_COLS: ColumnDef[] = [
   { key: "serial",   label: "Serial",   width: "w-28" },
   { key: "name",     label: "Name",     width: "w-full" },
-  { key: "status",   label: "Status",   width: "w-36", render: (row) => statusText(String(row.status ?? ""), String(row.damageStatus ?? "normal")) },
+  { key: "status",   label: "Status",   width: "w-36", render: (row) => statusPill(String(row.status ?? ""), String(row.damageStatus ?? "normal")) },
   { key: "location", label: "Location", width: "w-48" },
   { key: "since",    label: "Since",    width: "w-28" },
 ];
@@ -264,7 +243,7 @@ function EquipmentExpandedDetail({ row, workspaceId }: { row: Record<string, unk
 export default function ReportsPage() {
   const { workspaceId } = useWorkspace();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabId>("status");
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [filters, setFilters] = useState<ReportFilters>({});
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -277,37 +256,43 @@ export default function ReportsPage() {
   const detail: EquipmentDetail | null = useMemo(() => {
     if (!detailData) return null;
     const eq = detailData;
-    const mapStatus = (s: string) => s === "available" ? "available" : s === "checked_out" ? "checked-out" : "retired";
-    const mapDmg = (d: string) => d === "damaged" ? "damaged" : d === "under_repair" ? "damaged" : d === "repaired" ? "available" : null;
-    // Find the most recent check-out event for current location
-      type CEType = {id:string;eventType:string;createdAt:string;user?:{displayName?:string;email?:string};studio?:{name?:string};stage?:{name?:string};set?:{name?:string};positionType?:string;exactLocationDescription?:string;};
-      const events = eq.checkEvents as unknown as CEType[];
-      const lastOut = events.find((e) => e.eventType === "check_out");
-      const currentLocation = lastOut
-        ? [lastOut.studio?.name, lastOut.stage?.name, lastOut.set?.name, lastOut.positionType, lastOut.exactLocationDescription].filter(Boolean).join(" → ")
-        : undefined;
-      return {
+    type CEType = {id:string;eventType:string;createdAt:string;user?:{displayName?:string;email?:string};studio?:{name?:string};stage?:{name?:string};set?:{name?:string};positionType?:string;exactLocationDescription?:string;};
+    const events = eq.checkEvents as unknown as CEType[];
+    const latest = events[0];
+    const isCurrentlyIssued = eq.status === "checked_out" && latest?.eventType === "check_out";
+    const currentLocation = isCurrentlyIssued && latest
+      ? locationChain([latest.studio?.name, latest.stage?.name, latest.set?.name, latest.positionType, latest.exactLocationDescription])
+      : undefined;
+    return {
       id:       eq.id,
       serial:   eq.serial,
       type:     eq.name,
       category: (eq.category as {name?: string} | null)?.name ?? "Uncategorised",
-      status:   (mapDmg(eq.damageStatus) ?? mapStatus(eq.status)) as EquipmentDetail["status"],
+      status:   sharedEffectiveStatus(eq.status, eq.damageStatus),
       notes:    (eq.notes as string | null) ?? undefined,
       location: currentLocation,
       addedAt:  new Date(eq.createdAt).toISOString(),
+      issuedAt: isCurrentlyIssued && latest ? new Date(latest.createdAt).toISOString() : null,
       checkHistory: events.map((ce) => ({
         id:        ce.id,
         type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
-        location:  [ce.studio?.name, ce.stage?.name, ce.set?.name].filter(Boolean).join(" → "),
+        location:  locationChain([ce.studio?.name, ce.stage?.name, ce.set?.name, ce.positionType, ce.exactLocationDescription]),
+        locationParts: {
+          studio:   ce.studio?.name ?? null,
+          stage:    ce.stage?.name ?? null,
+          set:      ce.set?.name ?? null,
+          position: ce.positionType ?? null,
+          exact:    ce.exactLocationDescription ?? null,
+        },
         checkedBy: ce.user?.displayName ?? ce.user?.email ?? "Unknown",
         timestamp: new Date(ce.createdAt).toISOString(),
       })),
-      damageHistory: (eq.damageReports as unknown as {id:string;damageDescription?:string;reportedAt:string;reporter?:{displayName?:string;email?:string};repairLogs:{id:string;description?:string;repairedByName?:string;repairedAt?:string}[];}[]).map((dr) => ({
+      damageHistory: (eq.damageReports as unknown as {id:string;description?:string;reportedAt:string;reporter?:{displayName?:string;email?:string};repairLogs:{id:string;description?:string;repairedByName?:string;repairedAt?:string}[];}[]).map((dr) => ({
         id:          dr.id,
-        description: dr.damageDescription ?? "",
+        description: dr.description ?? "",
         reportedBy:  dr.reporter?.displayName ?? dr.reporter?.email ?? "Unknown",
         timestamp:   new Date(dr.reportedAt).toISOString(),
-        status:      "damaged" as const,
+        status:      (dr.repairLogs[0] ? "repaired" : "damaged") as "damaged" | "repaired",
         resolution:  dr.repairLogs[0]?.description,
         repairedBy:  dr.repairLogs[0]?.repairedByName,
         repairedAt:  dr.repairLogs[0]?.repairedAt ? new Date(dr.repairLogs[0].repairedAt).toISOString() : undefined,
@@ -315,20 +300,63 @@ export default function ReportsPage() {
     };
   }, [detailData]);
 
-  // ── Status tab ───────────────────────────────────────────────────────
+  // ── Overview tab (analytics) ──────────────────────────────────────────
 
-  const { data: statusData } = trpc.reports.equipmentStatus.useQuery(
-    { workspaceId, limit: 200 },
-    { enabled: activeTab === "status" }
+  const { data: overviewData } = trpc.reports.wrapSummary.useQuery(
+    { workspaceId },
+    { enabled: activeTab === "overview" }
   );
-  const statusRows = (statusData?.items ?? []).map((e) => ({
-    id:          e.id,
-    serial:      e.serial,
-    name:        e.name,
-    category:    e.category?.name ?? "—",
-    status:      e.status,
-    damageStatus: e.damageStatus,
-  }));
+
+  // ── Shared filter data ──────────────────────────────────────────────
+
+  const { data: allCategories } = trpc.category.list.useQuery(
+    { workspaceId },
+    { enabled: activeTab !== "overview" }
+  );
+  const { data: allStudios } = trpc.location.studio.list.useQuery(
+    { workspaceId },
+    { enabled: activeTab !== "overview" }
+  );
+
+  const categoryOptions = (allCategories ?? []).map((c) => ({ value: c.id, label: c.name }));
+  const locationOptions = (allStudios    ?? []).map((s) => ({ value: s.id, label: s.name }));
+  const statusOptions = [
+    { value: "available",    label: "Available" },
+    { value: "issued",       label: "Issued" },
+    { value: "damaged",      label: "Damaged" },
+    { value: "under_repair", label: "Under Repair" },
+    { value: "repaired",     label: "Repaired" },
+    { value: "retired",      label: "Retired" },
+  ];
+
+  // Generic row filter — accepts rich rows with optional fields used for filtering
+  function applyFilters<T extends { categoryId?: string; studioId?: string; rawDate?: Date | string | null; status?: string; damageStatus?: string }>(rows: T[]): T[] {
+    return rows.filter((r) => {
+      if (filters.status) {
+        const f  = filters.status;
+        const ds = r.damageStatus ?? "normal";
+        const s  = r.status ?? "";
+        const matches =
+          (f === "available"    && s === "available"   && ds === "normal") ||
+          (f === "issued"       && s === "checked_out" && ds === "normal") ||
+          (f === "damaged"      && ds === "damaged") ||
+          (f === "under_repair" && ds === "under_repair") ||
+          (f === "repaired"     && ds === "repaired") ||
+          (f === "retired"      && s === "retired");
+        if (!matches) return false;
+      }
+      if (filters.locationId && r.studioId !== filters.locationId) return false;
+      const f2 = filters as ReportFilters & { categoryId?: string };
+      if (f2.categoryId && r.categoryId !== f2.categoryId) return false;
+      if (filters.dateFrom || filters.dateTo) {
+        if (!r.rawDate) return false;
+        const d = new Date(r.rawDate).getTime();
+        if (filters.dateFrom && d < new Date(filters.dateFrom).getTime())             return false;
+        if (filters.dateTo   && d > new Date(filters.dateTo + "T23:59:59").getTime()) return false;
+      }
+      return true;
+    });
+  }
 
   // ── Checked Out tab ──────────────────────────────────────────────────
 
@@ -336,19 +364,24 @@ export default function ReportsPage() {
     { workspaceId },
     { enabled: activeTab === "checked-out" }
   );
-  const checkedOutRows = (checkedOutData ?? []).map((e) => {
+  const checkedOutRows = applyFilters((checkedOutData ?? []).map((e) => {
     const evt = e.checkEvents[0];
     const loc = [evt?.studio?.name, evt?.stage?.name].filter(Boolean).join(" / ");
     return {
-      id:         e.id,
-      serial:     e.serial,
-      name:       e.name,
-      category:   e.category?.name ?? "—",
-      location:   loc || "Unknown",
-      checkedBy:  evt?.user?.displayName ?? "Unknown",
-      since:      relTime(evt?.createdAt),
+      id:           e.id,
+      serial:       e.serial,
+      name:         e.name,
+      category:     e.category?.name ?? "—",
+      categoryId:   e.categoryId ?? undefined,
+      status:       e.status,
+      damageStatus: e.damageStatus,
+      studioId:     evt?.studioId ?? undefined,
+      rawDate:      evt?.createdAt ?? null,
+      location:     loc || "Unknown",
+      checkedBy:    evt?.user?.displayName ?? "Unknown",
+      since:        relTime(evt?.createdAt),
     };
-  });
+  }));
 
   // ── Damaged tab ──────────────────────────────────────────────────────
 
@@ -356,24 +389,22 @@ export default function ReportsPage() {
     { workspaceId },
     { enabled: activeTab === "damaged" }
   );
-  const damagedRows = (damagedData ?? []).map((e) => {
+  const damagedRows = applyFilters((damagedData ?? []).map((e) => {
     const report = e.damageReports[0];
     return {
       id:           e.id,
       serial:       e.serial,
       name:         e.name,
+      status:       e.status,
       damageStatus: e.damageStatus,
+      categoryId:   e.categoryId ?? undefined,
+      rawDate:      report?.reportedAt ?? null,
       reportedBy:   report?.reporter?.displayName ?? "Unknown",
       reportedAt:   relTime(report?.reportedAt),
     };
-  });
+  }));
 
   // ── By Location tab ──────────────────────────────────────────────────
-
-  const { data: studios } = trpc.location.studio.list.useQuery(
-    { workspaceId },
-    { enabled: activeTab === "by-location" }
-  );
 
   const [locationStudioId, setLocationStudioId] = useState("");
 
@@ -382,7 +413,7 @@ export default function ReportsPage() {
     { enabled: activeTab === "by-location" && !!locationStudioId }
   );
 
-  const byLocationRows = (byLocationData ?? []).map((e) => {
+  const byLocationRows = applyFilters((byLocationData ?? []).map((e) => {
     const evt = e.checkEvents[0];
     const loc = [evt?.studio?.name, evt?.stage?.name, evt?.set?.name].filter(Boolean).join(" → ");
     return {
@@ -391,10 +422,13 @@ export default function ReportsPage() {
       name:         e.name,
       status:       e.status,
       damageStatus: e.damageStatus,
+      categoryId:   e.categoryId ?? undefined,
+      studioId:     evt?.studioId ?? undefined,
+      rawDate:      evt?.createdAt ?? null,
       location:     loc || "—",
       since:        relTime(evt?.createdAt),
     };
-  });
+  }));
 
   // ── Activity Log tab ─────────────────────────────────────────────────
 
@@ -418,7 +452,7 @@ export default function ReportsPage() {
   // ── Active tab data / columns ─────────────────────────────────────────
 
   const tabConfig: Record<TabId, { columns: ColumnDef[]; rows: Record<string, unknown>[]; filename: string }> = {
-    "status":      { columns: STATUS_COLS,      rows: statusRows,      filename: "logitrak-status.csv" },
+    "overview":    { columns: [],                rows: [],              filename: "logitrak-overview.csv" },
     "checked-out": { columns: CHECKED_OUT_COLS, rows: checkedOutRows,  filename: "logitrak-checked-out.csv" },
     "damaged":     { columns: DAMAGED_COLS,     rows: damagedRows,     filename: "logitrak-damaged.csv" },
     "by-location": { columns: BY_LOCATION_COLS, rows: byLocationRows,  filename: "logitrak-by-location.csv" },
@@ -453,16 +487,19 @@ export default function ReportsPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 pt-5 space-y-4">
-          {/* Filter bar — date range on all tabs; location on activity */}
-          {activeTab === "activity" && (
+          {/* Universal filter bar — applies to all table tabs */}
+          {activeTab !== "overview" && (
             <ReportFilterBar
               filters={filters}
               onChange={setFilters}
               showDateRange
+              statusOptions={activeTab !== "damaged" ? statusOptions : undefined}
+              categories={categoryOptions}
+              locations={activeTab !== "by-location" ? locationOptions : undefined}
             />
           )}
 
-          {/* By-location studio picker */}
+          {/* By-location studio picker — this tab needs a studio selected to load data */}
           {activeTab === "by-location" && (
             <div className="bg-white rounded-card border border-grey-mid px-4 py-3 flex items-center gap-4">
               <label className="text-caption text-grey uppercase">Studio / Venue</label>
@@ -472,20 +509,28 @@ export default function ReportsPage() {
                 className="flex-1 max-w-xs bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
               >
                 <option value="">Select a studio…</option>
-                {(studios ?? []).map((s) => (
+                {(allStudios ?? []).map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             </div>
           )}
 
-          <ReportTable
-            columns={columns}
-            rows={rows}
-            title={TABS.find((t) => t.id === activeTab)?.label ?? ""}
-            onExport={() => downloadCsv(filename, rows, columns)}
-            onRowClick={activeTab !== "activity" ? (row) => setDetailId(row.id as string) : undefined}
-          />
+          {/* Overview tab — analytics stat cards */}
+          {activeTab === "overview" && (
+            <OverviewPanel data={overviewData} />
+          )}
+
+          {/* Table-based tabs */}
+          {activeTab !== "overview" && (
+            <ReportTable
+              columns={columns}
+              rows={rows}
+              title={TABS.find((t) => t.id === activeTab)?.label ?? ""}
+              onExport={() => downloadCsv(filename, rows, columns)}
+              onRowClick={activeTab !== "activity" ? (row) => setDetailId(row.id as string) : undefined}
+            />
+          )}
         </div>
       </div>
 
@@ -500,5 +545,95 @@ export default function ReportsPage() {
         }}
       />
     </>
+  );
+}
+
+// ── Overview panel (analytics) ────────────────────────────────
+
+type OverviewData = {
+  totalEquipment: number;
+  checkedOut: number;
+  damaged: number;
+  underRepair: number;
+  repaired: number;
+  retiredCount: number;
+  recentActivity: Array<{
+    id: string;
+    eventType: string;
+    description?: string | null;
+    createdAt: Date | string;
+    actor?: { displayName?: string | null; email?: string | null } | null;
+  }>;
+};
+
+function OverviewPanel({ data }: { data: OverviewData | undefined }) {
+  if (!data) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-pulse">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="bg-white rounded-card border border-grey-mid h-24" />
+        ))}
+      </div>
+    );
+  }
+
+  const total = data.totalEquipment || 1; // avoid div-by-zero
+  const utilisationPct = Math.round((data.checkedOut / total) * 100);
+  const damageRatePct  = Math.round(((data.damaged + data.underRepair) / total) * 100);
+  const available = Math.max(0, total - data.checkedOut - data.damaged - data.underRepair);
+
+  const stats = [
+    { label: "Total Equipment", value: data.totalEquipment, sub: "active items",                 colour: "text-surface-dark" },
+    { label: "Available",       value: available,           sub: "ready to issue",                colour: "text-status-green" },
+    { label: "Issued",          value: data.checkedOut,     sub: `${utilisationPct}% utilisation`, colour: "text-status-amber" },
+    { label: "Damaged",         value: data.damaged,        sub: `${damageRatePct}% damage rate`,  colour: "text-status-red" },
+    { label: "Under Repair",    value: data.underRepair,    sub: "in workshop",                   colour: "text-status-amber" },
+    { label: "Repaired",        value: data.repaired,       sub: "awaiting return",               colour: "text-status-teal" },
+    { label: "Retired",         value: data.retiredCount,   sub: "decommissioned",                colour: "text-grey" },
+    { label: "Utilisation",     value: `${utilisationPct}%`, sub: "of active fleet",              colour: "text-brand-blue" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {stats.map((s) => (
+          <div key={s.label} className="bg-white rounded-card border border-grey-mid p-4">
+            <div className="text-caption text-grey uppercase tracking-wide">{s.label}</div>
+            <div className={`text-[28px] font-semibold mt-1 ${s.colour}`}>{s.value}</div>
+            <div className="text-[11px] text-grey mt-0.5">{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent activity */}
+      <div className="bg-white rounded-card border border-grey-mid">
+        <div className="px-4 py-3 border-b border-grey-mid flex items-center justify-between">
+          <h3 className="text-[13px] font-semibold text-surface-dark">Recent Activity</h3>
+          <span className="text-[11px] text-grey">Last 10 events</span>
+        </div>
+        <div className="divide-y divide-grey-mid">
+          {data.recentActivity.length === 0 ? (
+            <div className="px-4 py-6 text-center text-[12px] text-grey">No activity yet</div>
+          ) : (
+            data.recentActivity.map((ev) => (
+              <div key={ev.id} className="px-4 py-3 flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="text-[13px] text-surface-dark">
+                    <span className="font-medium">{ev.actor?.displayName ?? ev.actor?.email ?? "System"}</span>
+                    <span className="text-grey ml-1">{ev.eventType.replace(/_/g, " ")}</span>
+                  </div>
+                  {ev.description && (
+                    <div className="text-[11px] text-grey mt-0.5">{ev.description}</div>
+                  )}
+                </div>
+                <span className="text-[11px] text-grey whitespace-nowrap">
+                  {new Date(ev.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

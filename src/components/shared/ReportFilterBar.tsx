@@ -28,6 +28,8 @@ export interface ReportFilters {
   dateTo?:    string;
   /** Status key — e.g. "available", "checked-out", "damaged" */
   status?:    string;
+  /** Category ID */
+  categoryId?: string;
   /** Location ID */
   locationId?: string;
   /** User ID */
@@ -50,6 +52,8 @@ export interface ReportFilterBarProps {
   showDateRange?: boolean;
   /** Status filter options — omit to hide the filter */
   statusOptions?: FilterOption[];
+  /** Category options — omit to hide the filter */
+  categories?:    FilterOption[];
   /** Location options — omit to hide the filter */
   locations?:     FilterOption[];
   /** User options — omit to hide the filter */
@@ -62,6 +66,7 @@ export function ReportFilterBar({
   onChange,
   showDateRange = true,
   statusOptions,
+  categories,
   locations,
   users,
   className,
@@ -78,6 +83,7 @@ export function ReportFilterBar({
     filters.dateFrom ||
     filters.dateTo ||
     filters.status ||
+    filters.categoryId ||
     filters.locationId ||
     filters.userId;
 
@@ -120,6 +126,21 @@ export function ReportFilterBar({
         >
           <option value="">All statuses</option>
           {statusOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      )}
+
+      {/* ── Category ── */}
+      {categories && categories.length > 0 && (
+        <select
+          value={filters.categoryId ?? ""}
+          onChange={(e) => set({ categoryId: e.target.value || undefined })}
+          className={filterSelectClass}
+          aria-label="Filter by category"
+        >
+          <option value="">All categories</option>
+          {categories.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
