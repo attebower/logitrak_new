@@ -24,8 +24,8 @@ import {
   PRINTERS, LABEL_DESIGNS, getPrinter, getLabelSize, formatSerial,
   type PrinterType, type LabelDesign, type CodeType,
 } from "@/lib/labels/catalog";
-import { printLabelBatch } from "@/lib/labels/print";
-import { ChevronLeft, ChevronRight, Tag, QrCode, Barcode as BarcodeIcon, Printer, Download } from "lucide-react";
+import { triggerLabelGeneration } from "@/lib/labels/print";
+import { ChevronLeft, ChevronRight, Tag, QrCode, Barcode as BarcodeIcon, Printer, FileText, Info } from "lucide-react";
 
 export default function GenerateLabelsPage() {
   const { workspaceId } = useWorkspace();
@@ -40,6 +40,7 @@ export default function GenerateLabelsPage() {
   const [codeType, setCodeType] = useState<CodeType>("qr");
   const [printer, setPrinter] = useState<PrinterType>("generic_pdf");
   const [sizeId, setSizeId] = useState<string>("");
+  const [outputFormat, setOutputFormat] = useState<"native" | "pdf">("native");
   const [previewIndex, setPreviewIndex] = useState(0);
   const [printing, setPrinting] = useState(false);
   const [lastBatch, setLastBatch] = useState<{ serialStart: number; serialEnd: number } | null>(null);
@@ -71,6 +72,10 @@ export default function GenerateLabelsPage() {
     if (!p.sizes.find((s) => s.id === sizeId)) {
       setSizeId(p.sizes[0]?.id ?? "");
     }
+    // If printer has no native format, force PDF
+    const hasNative = p.outputFormat !== "pdf" || printer === "brother_ql" || printer === "brother_pt";
+    if (!hasNative) setOutputFormat("pdf");
+    else setOutputFormat("native");
   }, [printer, sizeId]);
 
   const currentPrinter = useMemo(() => getPrinter(printer), [printer]);
@@ -91,7 +96,7 @@ export default function GenerateLabelsPage() {
 
   const canPrint = !!currentSize && quantity > 0 && quantity <= 200 && !printing;
 
-  async function handlePrint(asFile: boolean) {
+  async function handleGenerate() {
     if (!currentSize || !currentPrinter || !state) return;
     setPrinting(true);
     try {
@@ -105,16 +110,10 @@ export default function GenerateLabelsPage() {
         labelSize: sizeId,
       });
 
-      // Client-side print/download
-      await printLabelBatch({
-        serialStart: batch.serialStart,
-        serialEnd: batch.serialEnd,
-        design,
-        codeType,
-        orgName: state.workspaceName,
-        size: currentSize,
-        printer: currentPrinter,
-        asFile,
+      await triggerLabelGeneration({
+        batchId: batch.id,
+        outputFormat,
+        printInline: outputFormat === "pdf",
       });
 
       setLastBatch({ serialStart: batch.serialStart, serialEnd: batch.serialEnd });
@@ -122,11 +121,26 @@ export default function GenerateLabelsPage() {
       await refetch();
     } catch (err) {
       console.error(err);
-      alert("Something went wrong generating the labels. Please try again.");
+      alert(err instanceof Error ? err.message : "Something went wrong generating the labels. Please try again.");
     } finally {
       setPrinting(false);
     }
   }
+
+  // Helper: does the chosen printer have a native/smart output format (non-PDF)?
+  const hasNativeFormat =
+    currentPrinter?.outputFormat === "dymo_xml" ||
+    currentPrinter?.outputFormat === "zpl" ||
+    printer === "brother_ql" || printer === "brother_pt";
+
+  const nativeDescription =
+    printer === "brother_ql" || printer === "brother_pt"
+      ? "ZIP containing .lbx (opens in P-touch Editor) + serials.csv"
+      : currentPrinter?.outputFormat === "dymo_xml"
+      ? "ZIP containing .label (opens in DYMO Connect) + serials.csv"
+      : currentPrinter?.outputFormat === "zpl"
+      ? "Zebra ZPL file — send to your printer"
+      : "PDF";
 
   if (stateLoading || !state) {
     return (
@@ -312,32 +326,112 @@ export default function GenerateLabelsPage() {
                 </div>
               </section>
 
-              {/* Step 4 — Print */}
+              {/* Step 4 — Output format + Generate */}
               <section className="bg-white border border-grey-mid rounded-card shadow-card">
-                <div className="p-5 flex items-center gap-3">
+                <header className="px-5 py-4 border-b border-grey-mid">
+                  <h2 className="text-[14px] font-semibold text-surface-dark flex items-center gap-2">
+                    <span className="h-5 w-5 rounded-full bg-brand-blue text-white text-[11px] font-bold flex items-center justify-center">4</span>
+                    Generate
+                  </h2>
+                </header>
+                <div className="p-5 space-y-4">
+                  {/* Output format toggle */}
+                  <div className="space-y-2">
+                    {hasNativeFormat && (
+                      <label className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors ${outputFormat === "native" ? "border-brand-blue bg-brand-blue/[0.04]" : "border-grey-mid hover:border-brand-blue/40"}`}>
+                        <input
+                          type="radio"
+                          name="outputFormat"
+                          value="native"
+                          checked={outputFormat === "native"}
+                          onChange={() => setOutputFormat("native")}
+                          className="mt-0.5"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-semibold text-surface-dark">Native file (recommended)</span>
+                            <span className="text-[10px] font-bold text-white bg-brand-blue px-1.5 py-0.5 rounded">BEST</span>
+                          </div>
+                          <div className="text-[11px] text-grey mt-0.5">{nativeDescription}</div>
+                        </div>
+                      </label>
+                    )}
+                    <label className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors ${outputFormat === "pdf" ? "border-brand-blue bg-brand-blue/[0.04]" : "border-grey-mid hover:border-brand-blue/40"}`}>
+                      <input
+                        type="radio"
+                        name="outputFormat"
+                        value="pdf"
+                        checked={outputFormat === "pdf"}
+                        onChange={() => setOutputFormat("pdf")}
+                        className="mt-0.5"
+                      />
+                      <div className="flex-1">
+                        <div className="text-[13px] font-semibold text-surface-dark">PDF</div>
+                        <div className="text-[11px] text-grey mt-0.5">Opens in your browser. Hit Cmd/Ctrl+P, pick your label printer, print.</div>
+                      </div>
+                    </label>
+                  </div>
+
                   <Button
                     variant="primary"
                     size="lg"
                     disabled={!canPrint}
-                    onClick={() => handlePrint(false)}
-                    className="flex-1"
+                    onClick={handleGenerate}
+                    className="w-full"
                   >
-                    <Printer className="h-4 w-4 mr-2" />
-                    {printing ? "Generating…" : `Print ${quantity} label${quantity !== 1 ? "s" : ""}`}
+                    {outputFormat === "pdf" ? <FileText className="h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                    {printing ? "Generating…" : `Generate ${quantity} label${quantity !== 1 ? "s" : ""}`}
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    disabled={!canPrint}
-                    onClick={() => handlePrint(true)}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
+                  <p className="text-[11px] text-grey">
+                    Hitting generate locks in serials {formatSerial(serialStart)}–{formatSerial(serialEnd)} — they cannot be reused.
+                  </p>
                 </div>
-                <p className="px-5 pb-4 text-[11px] text-grey">
-                  Hitting print locks in serials {formatSerial(serialStart)}–{formatSerial(serialEnd)} — they cannot be reused.
-                </p>
+              </section>
+
+              {/* How it works */}
+              <section className="bg-blue-50/50 border border-brand-blue/20 rounded-card">
+                <div className="p-5">
+                  <h3 className="text-[13px] font-semibold text-surface-dark flex items-center gap-2 mb-3">
+                    <Info className="h-4 w-4 text-brand-blue" />
+                    How this works
+                  </h3>
+                  {hasNativeFormat ? (
+                    <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
+                      <li>Click Generate — you&apos;ll get a ZIP file with the label design + serials CSV.</li>
+                      <li>Unzip it anywhere on your computer.</li>
+                      <li>
+                        Double-click the{" "}
+                        {printer === "brother_ql" || printer === "brother_pt"
+                          ? <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.lbx</code>
+                          : currentPrinter?.outputFormat === "dymo_xml"
+                          ? <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.label</code>
+                          : <code className="bg-white px-1 rounded text-[11px] border border-grey-mid">.zpl</code>
+                        }
+                        {" "}file. Your label software opens with every serial ready to go.
+                      </li>
+                      <li>Hit Print in the label software. Labels come out.</li>
+                      <li>Stick them on your kit, then scan each one via Add Equipment to register it.</li>
+                    </ol>
+                  ) : (
+                    <ol className="text-[12px] text-surface-dark/80 space-y-1.5 list-decimal list-inside">
+                      <li>Click Generate — a PDF opens in a new tab.</li>
+                      <li>Press Cmd/Ctrl+P to open your print dialog.</li>
+                      <li>Pick your label printer from the list.</li>
+                      <li>Make sure paper size matches ({currentSize?.widthMm} × {currentSize?.heightMm}mm) — most drivers pick this automatically.</li>
+                      <li>Hit Print. Stick labels on kit, then scan via Add Equipment.</li>
+                    </ol>
+                  )}
+                  {(printer === "brother_ql" || printer === "brother_pt") && outputFormat === "native" && (
+                    <p className="text-[11px] text-grey mt-3 pt-3 border-t border-brand-blue/10">
+                      Needs <a href="https://www.brother.co.uk/support/downloads" target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">P-touch Editor 5+</a> installed (free from Brother).
+                    </p>
+                  )}
+                  {currentPrinter?.outputFormat === "dymo_xml" && outputFormat === "native" && (
+                    <p className="text-[11px] text-grey mt-3 pt-3 border-t border-brand-blue/10">
+                      Needs <a href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">DYMO Connect</a> installed (free from DYMO).
+                    </p>
+                  )}
+                </div>
               </section>
 
             </div>
