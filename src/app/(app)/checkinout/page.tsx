@@ -425,6 +425,7 @@ export default function CheckInOutPage() {
             {/* LEFT: Scan + Batch */}
             <div className="space-y-4">
               <ScanPanel
+                tab={tab}
                 scanSearch={scanSearch}
                 setScanSearch={setScanSearch}
                 onSerialComplete={handleSerialInput}
@@ -545,8 +546,9 @@ export default function CheckInOutPage() {
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function ScanPanel({
-  scanSearch, setScanSearch, onSerialComplete, onScan, warnings, onDismissWarning,
+  tab, scanSearch, setScanSearch, onSerialComplete, onScan, warnings, onDismissWarning,
 }: {
+  tab: Tab;
   scanSearch: string;
   setScanSearch: (s: string) => void;
   onSerialComplete: (s: string) => void;
@@ -578,7 +580,9 @@ function ScanPanel({
   return (
     <div className="bg-white rounded-card border border-grey-mid border-l-4 border-l-brand-blue overflow-hidden">
       <div className="px-5 py-3.5 border-b border-grey-mid">
-        <h2 className="text-[13px] font-semibold text-surface-dark">Scan</h2>
+        <h2 className="text-[13px] font-semibold text-surface-dark">
+          {tab === "out" ? "Check Out" : "Check In"}
+        </h2>
       </div>
       <div className="p-5 space-y-4">
         <div className="lg:hidden">
