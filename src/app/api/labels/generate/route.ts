@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
         serialEnd: batch.serialEnd,
         orgName: batch.workspace.name,
       }));
-      zip.file("README.txt", buildDymoReadme(batch.id));
+      zip.file("README.txt", buildDymoReadme(batch.id, batch.serialStart, batch.serialEnd));
       const buf = await zip.generateAsync({ type: "uint8array" });
       const filename = `logitrak-dymo-${pad(batch.serialStart)}-${pad(batch.serialEnd)}.zip`;
       return new NextResponse(Buffer.from(buf), {

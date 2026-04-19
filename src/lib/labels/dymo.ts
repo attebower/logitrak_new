@@ -1,12 +1,16 @@
 /**
  * DYMO .dymo file generator for DYMO Connect.
  *
- * DYMO Connect uses the DesktopLabel v1 / DYMOLabel v4 XML schema (inches,
- * not the 1/20mm "twips" of the older DYMO Label v8 format). This template
- * is based on a real file produced by DYMO Connect on macOS.
+ * This implementation is based on a *real file produced by DYMO Connect*
+ * (see scripts/dymo-template.xml) and modifies it minimally — only swapping
+ * the serial text and adjusting the layout point. DYMO Connect's schema is
+ * strict and undocumented; reverse-engineering it from scratch produces
+ * files it rejects as invalid.
  *
- * We emit the file with embedded data rows in <DataTable> — DYMO Connect
- * shows a merge preview and prints each row as its own label.
+ * Phase 1 strategy: emit ONE label with the first serial visible, and a
+ * CSV alongside with every serial. User imports the CSV in DYMO Connect
+ * to merge-print the batch. Once we have a known-good merged-data format
+ * we can embed rows directly.
  */
 
 import { formatSerial, type LabelSize, type CodeType, type LabelDesign } from "./catalog";
@@ -14,19 +18,25 @@ import { formatSerial, type LabelSize, type CodeType, type LabelDesign } from ".
 const MM_TO_INCH = 1 / 25.4;
 
 /**
- * Map our label size ids to DYMO Connect internal LabelName strings. These
- * match the SKU catalog DYMO Connect ships with — using the right name is
- * what makes DYMO recognise the file as a real label for a specific roll.
- *
- * Format is always `<LabelType><SKU>` where the SKU comes from the DYMO
- * label reel packaging (e.g. 30252 Address labels → "Addresss0722370").
+ * Maps our internal label size ids to the DYMO Connect catalog LabelName.
+ * These names match the label SKUs baked into DYMO Connect — using the wrong
+ * one causes "invalid file" errors.
  */
 const DYMO_LABEL_NAMES: Record<string, string> = {
-  "30252": "Addresss0722370",        // Address 28×89mm
+  "30252": "Addresss0722370",         // Address 28×89mm
   "30334": "MultiPurpose300680",      // Multipurpose 57×32mm
   "30336": "MultiPurpose300687",      // Small multipurpose 25×54mm
   "30256": "Shipping300707",          // Shipping 59×102mm
   "30364": "NameBadgeLabel0722710",   // Name badge 41×89mm
+};
+
+/** Per-SKU exact printable area (inches). DYMO is picky about this. */
+const DYMO_LABEL_GEOMETRY: Record<string, { x: number; y: number; w: number; h: number }> = {
+  "30252": { x: 0.23,  y: 0.06, w: 3.21,   h: 0.9966666 },  // Address 28×89
+  "30334": { x: 0.115, y: 0.06, w: 2.0142, h: 1.1398 },     // Multipurpose 57×32
+  "30336": { x: 0.115, y: 0.06, w: 0.9142, h: 1.9146 },     // Small multipurpose 25×54
+  "30256": { x: 0.115, y: 0.06, w: 3.7842, h: 2.1646 },     // Shipping 59×102
+  "30364": { x: 0.115, y: 0.06, w: 3.1042, h: 1.4998 },     // Name badge 41×89
 };
 
 export interface DymoArgs {
@@ -48,67 +58,49 @@ function esc(s: string): string {
 }
 
 /**
- * Build a single DYMO .dymo file sized to the given label. The layout is
- * simple and consistent: barcode on the left, serial + org stacked on the right.
- * Data rows are embedded directly (one row per serial) so the user just
- * opens the file and prints — no separate CSV needed.
+ * Build a minimal .dymo file with a single text object showing the first
+ * serial. Layout, dimensions, and LabelName match a real DYMO Connect file
+ * as closely as possible.
  */
 export function buildDymoLabel(args: DymoArgs): string {
-  const { size, codeType, orgName, serialStart, serialEnd } = args;
+  const { size, serialStart } = args;
 
-  // Whole label dimensions (inches, DYMO native unit)
-  const labelW = +(size.widthMm * MM_TO_INCH).toFixed(4);
-  const labelH = +(size.heightMm * MM_TO_INCH).toFixed(4);
-
-  // Use the proper DYMO LabelName if we know the SKU, otherwise fall back.
-  // Unknown names are a common cause of "invalid file" errors in DYMO Connect.
   const labelName = DYMO_LABEL_NAMES[size.id] ?? "Addresss0722370";
+  const geom = DYMO_LABEL_GEOMETRY[size.id] ?? {
+    x: 0.115,
+    y: 0.06,
+    w: +(size.widthMm * MM_TO_INCH - 0.23).toFixed(4),
+    h: +(size.heightMm * MM_TO_INCH - 0.12).toFixed(4),
+  };
 
-  // Safe inset so we don't draw right on the edge
-  const inset = 0.08;
-  const innerW = +(labelW - inset * 2).toFixed(4);
-  const innerH = +(labelH - inset * 2).toFixed(4);
+  // Text area sits inside the printable rect, with a small margin
+  const textMargin = 0.1;
+  const textX = +(geom.x + textMargin).toFixed(4);
+  const textY = +(geom.y + textMargin).toFixed(4);
+  const textW = +(geom.w - textMargin * 2).toFixed(4);
+  const textH = +(geom.h - textMargin * 2).toFixed(4);
 
-  // Barcode on the left, 80% of inner height, aspect 1:1 for QR, wider for 1D
-  const isQR = codeType === "qr";
-  const codeW = +(isQR ? Math.min(innerH * 0.95, innerW * 0.4) : innerW * 0.55).toFixed(4);
-  const codeH = +(innerH * 0.95).toFixed(4);
-  const codeX = +(inset + 0.04).toFixed(4);
-  const codeY = +(inset + (innerH - codeH) / 2).toFixed(4);
+  const firstSerial = formatSerial(serialStart);
 
-  // Text block on the right
-  const textX = +(codeX + codeW + 0.08).toFixed(4);
-  const textW = +(labelW - textX - inset).toFixed(4);
-
-  // Serial text — upper 55% of text block
-  const serialY = +(inset + innerH * 0.08).toFixed(4);
-  const serialH = +(innerH * 0.5).toFixed(4);
-
-  // Org text — lower 35%
-  const orgY = +(inset + innerH * 0.62).toFixed(4);
-  const orgH = +(innerH * 0.3).toFixed(4);
-
-  const dataRows = buildDataRows({ serialStart, serialEnd, orgName });
-
-  const barcodeFormat = isQR ? "QRCode" : "Code128Auto";
-
-  // DYMO Connect requires a UTF-8 BOM at the start of the file.
+  // NOTE: The structure below is an exact copy of a DYMO Connect-produced
+  // .dymo file. Only the content (<Text>, <LabelName>, <DYMORect>, and
+  // <ObjectLayout>) varies per generation.
   return `\uFEFF<?xml version="1.0" encoding="utf-8"?>
 <DesktopLabel Version="1">
   <DYMOLabel Version="4">
-    <Description>LogiTrak Labels</Description>
+    <Description>DYMO Label</Description>
     <Orientation>Landscape</Orientation>
     <LabelName>${labelName}</LabelName>
     <InitialLength>0</InitialLength>
     <BorderStyle>SolidLine</BorderStyle>
     <DYMORect>
       <DYMOPoint>
-        <X>0</X>
-        <Y>0</Y>
+        <X>${geom.x}</X>
+        <Y>${geom.y}</Y>
       </DYMOPoint>
       <Size>
-        <Width>${labelW}</Width>
-        <Height>${labelH}</Height>
+        <Width>${geom.w}</Width>
+        <Height>${geom.h}</Height>
       </Size>
     </DYMORect>
     <BorderColor>
@@ -123,63 +115,37 @@ export function buildDymoLabel(args: DymoArgs): string {
     <DynamicLayoutManager>
       <RotationBehavior>ClearObjects</RotationBehavior>
       <LabelObjects>
-        <BarcodeObject>
-          <Name>Serial_Barcode</Name>
-          <Brushes>
-            <BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></BackgroundBrush>
-            <BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></BorderBrush>
-            <StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></StrokeBrush>
-            <FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></FillBrush>
-          </Brushes>
-          <Rotation>Rotation0</Rotation>
-          <OutlineThickness>1</OutlineThickness>
-          <IsOutlined>False</IsOutlined>
-          <BorderStyle>SolidLine</BorderStyle>
-          <Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0"/></Margin>
-          <BarcodeFormat>${barcodeFormat}</BarcodeFormat>
-          <Data>
-            <DataString>${formatSerial(serialStart)}</DataString>
-          </Data>
-          <HorizontalAlignment>Center</HorizontalAlignment>
-          <VerticalAlignment>Middle</VerticalAlignment>
-          <Size>Medium</Size>
-          <TextPosition>None</TextPosition>
-          <TextFont>
-            <FontName>Helvetica</FontName>
-            <FontSize>8</FontSize>
-            <IsBold>False</IsBold>
-            <IsItalic>False</IsItalic>
-            <IsUnderline>False</IsUnderline>
-            <FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></FontBrush>
-          </TextFont>
-          <CheckSumFont>
-            <FontName>Helvetica</FontName>
-            <FontSize>8</FontSize>
-            <IsBold>False</IsBold>
-            <IsItalic>False</IsItalic>
-            <IsUnderline>False</IsUnderline>
-            <FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></FontBrush>
-          </CheckSumFont>
-          <TextEmbedding>None</TextEmbedding>
-          <ECLevel>0</ECLevel>
-          <ObjectLayout>
-            <DYMOPoint><X>${codeX}</X><Y>${codeY}</Y></DYMOPoint>
-            <Size><Width>${codeW}</Width><Height>${codeH}</Height></Size>
-          </ObjectLayout>
-        </BarcodeObject>
         <TextObject>
-          <Name>Serial_Text</Name>
+          <Name>TextObject0</Name>
           <Brushes>
-            <BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></BackgroundBrush>
-            <BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></BorderBrush>
-            <StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></StrokeBrush>
-            <FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></FillBrush>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
           </Brushes>
           <Rotation>Rotation0</Rotation>
           <OutlineThickness>1</OutlineThickness>
           <IsOutlined>False</IsOutlined>
           <BorderStyle>SolidLine</BorderStyle>
-          <Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0"/></Margin>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
           <HorizontalAlignment>Center</HorizontalAlignment>
           <VerticalAlignment>Middle</VerticalAlignment>
           <FitMode>AlwaysFit</FitMode>
@@ -191,62 +157,31 @@ export function buildDymoLabel(args: DymoArgs): string {
             <IsVertical>False</IsVertical>
             <LineTextSpan>
               <TextSpan>
-                <Text>${formatSerial(serialStart)}</Text>
+                <Text>${esc(firstSerial)}</Text>
                 <FontInfo>
-                  <FontName>Courier New</FontName>
-                  <FontSize>22</FontSize>
+                  <FontName>Helvetica</FontName>
+                  <FontSize>36</FontSize>
                   <IsBold>True</IsBold>
                   <IsItalic>False</IsItalic>
                   <IsUnderline>False</IsUnderline>
-                  <FontBrush><SolidColorBrush><Color A="1" R="0.06" G="0.09" B="0.16"/></SolidColorBrush></FontBrush>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
                 </FontInfo>
               </TextSpan>
             </LineTextSpan>
           </FormattedText>
           <ObjectLayout>
-            <DYMOPoint><X>${textX}</X><Y>${serialY}</Y></DYMOPoint>
-            <Size><Width>${textW}</Width><Height>${serialH}</Height></Size>
-          </ObjectLayout>
-        </TextObject>
-        <TextObject>
-          <Name>Org_Name</Name>
-          <Brushes>
-            <BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></BackgroundBrush>
-            <BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></BorderBrush>
-            <StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"/></SolidColorBrush></StrokeBrush>
-            <FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"/></SolidColorBrush></FillBrush>
-          </Brushes>
-          <Rotation>Rotation0</Rotation>
-          <OutlineThickness>1</OutlineThickness>
-          <IsOutlined>False</IsOutlined>
-          <BorderStyle>SolidLine</BorderStyle>
-          <Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0"/></Margin>
-          <HorizontalAlignment>Center</HorizontalAlignment>
-          <VerticalAlignment>Middle</VerticalAlignment>
-          <FitMode>AlwaysFit</FitMode>
-          <IsVertical>False</IsVertical>
-          <FormattedText>
-            <FitMode>AlwaysFit</FitMode>
-            <HorizontalAlignment>Center</HorizontalAlignment>
-            <VerticalAlignment>Middle</VerticalAlignment>
-            <IsVertical>False</IsVertical>
-            <LineTextSpan>
-              <TextSpan>
-                <Text>${esc(orgName.toUpperCase())}</Text>
-                <FontInfo>
-                  <FontName>Helvetica</FontName>
-                  <FontSize>10</FontSize>
-                  <IsBold>False</IsBold>
-                  <IsItalic>False</IsItalic>
-                  <IsUnderline>False</IsUnderline>
-                  <FontBrush><SolidColorBrush><Color A="1" R="0.28" G="0.33" B="0.41"/></SolidColorBrush></FontBrush>
-                </FontInfo>
-              </TextSpan>
-            </LineTextSpan>
-          </FormattedText>
-          <ObjectLayout>
-            <DYMOPoint><X>${textX}</X><Y>${orgY}</Y></DYMOPoint>
-            <Size><Width>${textW}</Width><Height>${orgH}</Height></Size>
+            <DYMOPoint>
+              <X>${textX}</X>
+              <Y>${textY}</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>${textW}</Width>
+              <Height>${textH}</Height>
+            </Size>
           </ObjectLayout>
         </TextObject>
       </LabelObjects>
@@ -254,52 +189,15 @@ export function buildDymoLabel(args: DymoArgs): string {
   </DYMOLabel>
   <LabelApplication>Blank</LabelApplication>
   <DataTable>
-    <Columns>
-      <DataColumn>
-        <Name>Serial_Barcode</Name>
-        <DataColumnType>Text</DataColumnType>
-      </DataColumn>
-      <DataColumn>
-        <Name>Serial_Text</Name>
-        <DataColumnType>Text</DataColumnType>
-      </DataColumn>
-      <DataColumn>
-        <Name>Org_Name</Name>
-        <DataColumnType>Text</DataColumnType>
-      </DataColumn>
-    </Columns>
-    <Rows>
-${dataRows}
-    </Rows>
+    <Columns></Columns>
+    <Rows></Rows>
   </DataTable>
 </DesktopLabel>`;
 }
 
-function buildDataRows(args: { serialStart: number; serialEnd: number; orgName: string }): string {
-  const rows: string[] = [];
-  for (let n = args.serialStart; n <= args.serialEnd; n++) {
-    const serial = formatSerial(n);
-    rows.push(`      <DataRow>
-        <DataCell>
-          <Name>Serial_Barcode</Name>
-          <CellValue>${esc(serial)}</CellValue>
-        </DataCell>
-        <DataCell>
-          <Name>Serial_Text</Name>
-          <CellValue>${esc(serial)}</CellValue>
-        </DataCell>
-        <DataCell>
-          <Name>Org_Name</Name>
-          <CellValue>${esc(args.orgName.toUpperCase())}</CellValue>
-        </DataCell>
-      </DataRow>`);
-  }
-  return rows.join("\n");
-}
-
 /**
- * CSV with one row per label — kept as a fallback for users who'd rather
- * import data manually (e.g. large batches or custom workflows).
+ * CSV with one serial per row. User imports this in DYMO Connect via
+ * File → Import Data to merge-print every serial.
  */
 export function buildSerialsCsv(args: { serialStart: number; serialEnd: number; orgName: string }): string {
   const rows = ["Serial,OrgName"];
@@ -309,21 +207,23 @@ export function buildSerialsCsv(args: { serialStart: number; serialEnd: number; 
   return rows.join("\n");
 }
 
-export function buildDymoReadme(batchId: string): string {
+export function buildDymoReadme(batchId: string, serialStart: number, serialEnd: number): string {
   return `LogiTrak Labels — DYMO batch
 
 How to print:
 
 1. Double-click labels.dymo to open DYMO Connect.
-2. Every serial is already embedded — DYMO Connect will show them all in the data panel.
-3. Hit Print.
-
-If DYMO Connect doesn't show the data rows, click the "Data" tab and
-import serials.csv from this folder.
+2. The label template opens showing serial ${formatSerial(serialStart)}.
+3. To print all ${serialEnd - serialStart + 1} serials:
+   a. In DYMO Connect, click File → Import Data.
+   b. Choose serials.csv (in this folder).
+   c. Map the "Serial" column to the TextObject0 field.
+   d. Hit Print.
 
 Batch ID: ${batchId}
 
-All serials are reserved in LogiTrak. If you need to re-print this batch,
-just open the file again — no new serials will be used.
+All serials (${formatSerial(serialStart)}–${formatSerial(serialEnd)}) are
+reserved in LogiTrak and cannot be reused. If you need to re-print this
+batch just open this file again — no new serials are burned.
 `;
 }
