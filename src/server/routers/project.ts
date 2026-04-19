@@ -188,6 +188,206 @@ export const projectRouter = router({
       }),
   }),
 
+  // ── Set attachments (photos + lighting layouts) ────────────────────────────
+
+  setAttachments: router({
+    // List photos for a ProjectSet
+    listPhotos: workspaceProcedure
+      .input(z.object({ workspaceId: z.string(), projectSetId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        return ctx.prisma.setPhoto.findMany({
+          where: { projectSetId: input.projectSetId, workspaceId: ctx.workspaceId! },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          include: {
+            uploadedBy: { select: { displayName: true, email: true } },
+          },
+        });
+      }),
+
+    // List lighting layouts for a ProjectSet
+    listLayouts: workspaceProcedure
+      .input(z.object({ workspaceId: z.string(), projectSetId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        return ctx.prisma.setLightingLayout.findMany({
+          where: { projectSetId: input.projectSetId, workspaceId: ctx.workspaceId! },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          include: {
+            uploadedBy: { select: { displayName: true, email: true } },
+          },
+        });
+      }),
+
+    // After upload, the client calls this to register the file
+    registerPhoto: workspaceProcedure
+      .input(z.object({
+        workspaceId:  z.string(),
+        projectSetId: z.string(),
+        storagePath:  z.string(),
+        filename:     z.string(),
+        mimeType:     z.string(),
+        sizeBytes:    z.number().int().positive(),
+        caption:      z.string().max(200).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Verify the ProjectSet belongs to this workspace
+        const ps = await ctx.prisma.projectSet.findFirst({
+          where: { id: input.projectSetId, workspaceId: ctx.workspaceId! },
+          select: { id: true },
+        });
+        if (!ps) throw new TRPCError({ code: "NOT_FOUND", message: "Project set not found" });
+
+        return ctx.prisma.setPhoto.create({
+          data: {
+            workspaceId:  ctx.workspaceId!,
+            projectSetId: input.projectSetId,
+            uploadedById: ctx.session!.user.id,
+            storagePath:  input.storagePath,
+            filename:     input.filename,
+            mimeType:     input.mimeType,
+            sizeBytes:    input.sizeBytes,
+            caption:      input.caption,
+          },
+        });
+      }),
+
+    registerLayout: workspaceProcedure
+      .input(z.object({
+        workspaceId:  z.string(),
+        projectSetId: z.string(),
+        storagePath:  z.string(),
+        filename:     z.string(),
+        mimeType:     z.string(),
+        sizeBytes:    z.number().int().positive(),
+        title:        z.string().max(100).optional(),
+        description:  z.string().max(500).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const ps = await ctx.prisma.projectSet.findFirst({
+          where: { id: input.projectSetId, workspaceId: ctx.workspaceId! },
+          select: { id: true },
+        });
+        if (!ps) throw new TRPCError({ code: "NOT_FOUND", message: "Project set not found" });
+
+        return ctx.prisma.setLightingLayout.create({
+          data: {
+            workspaceId:  ctx.workspaceId!,
+            projectSetId: input.projectSetId,
+            uploadedById: ctx.session!.user.id,
+            storagePath:  input.storagePath,
+            filename:     input.filename,
+            mimeType:     input.mimeType,
+            sizeBytes:    input.sizeBytes,
+            title:        input.title,
+            description:  input.description,
+          },
+        });
+      }),
+
+    deletePhoto: workspaceProcedure
+      .input(z.object({ workspaceId: z.string(), photoId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!MANAGER_ROLES.includes(ctx.userRole!)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Manager or above required" });
+        }
+        // We return the storagePath so the API route can clean up the file too
+        return ctx.prisma.setPhoto.delete({
+          where: { id: input.photoId, workspaceId: ctx.workspaceId! },
+          select: { id: true, storagePath: true },
+        });
+      }),
+
+    deleteLayout: workspaceProcedure
+      .input(z.object({ workspaceId: z.string(), layoutId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!MANAGER_ROLES.includes(ctx.userRole!)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Manager or above required" });
+        }
+        return ctx.prisma.setLightingLayout.delete({
+          where: { id: input.layoutId, workspaceId: ctx.workspaceId! },
+          select: { id: true, storagePath: true },
+        });
+      }),
+
+    // Generate short-lived signed URLs for client rendering.
+    // Takes many storagePaths at once so the drawer only does one roundtrip per tab.
+    signUrls: workspaceProcedure
+      .input(z.object({
+        workspaceId: z.string(),
+        bucket:      z.enum(["set-photos", "set-layouts"]),
+        paths:       z.array(z.string()).max(100),
+      }))
+      .query(async ({ ctx, input }) => {
+        if (input.paths.length === 0) return {};
+        // Signed URL generation needs the service-role client.
+        const { createClient } = await import("@supabase/supabase-js");
+        const admin = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
+          { auth: { persistSession: false } },
+        );
+
+        // Verify every path is under this workspace (prefix match)
+        const wsPrefix = `${ctx.workspaceId}/`;
+        const safePaths = input.paths.filter((p) => p.startsWith(wsPrefix));
+        if (safePaths.length === 0) return {};
+
+        const { data, error } = await admin.storage
+          .from(input.bucket)
+          .createSignedUrls(safePaths, 60 * 15); // 15 min
+        if (error) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+        }
+        const out: Record<string, string> = {};
+        for (const row of data ?? []) {
+          if (row.path && row.signedUrl) out[row.path] = row.signedUrl;
+        }
+        return out;
+      }),
+
+    // Damage reports on equipment that has touched this set (for PDF + UI)
+    damageOnSet: workspaceProcedure
+      .input(z.object({ workspaceId: z.string(), projectId: z.string(), projectSetId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        // First resolve the underlying setId from the ProjectSet
+        const ps = await ctx.prisma.projectSet.findFirst({
+          where: { id: input.projectSetId, workspaceId: ctx.workspaceId! },
+          select: { setId: true },
+        });
+        if (!ps) return [];
+
+        const project = await ctx.prisma.project.findFirst({
+          where: { id: input.projectId, workspaceId: ctx.workspaceId! },
+          select: { name: true },
+        });
+        if (!project) return [];
+
+        // Any damage report whose equipment has a check event on this set in this project
+        return ctx.prisma.damageReport.findMany({
+          where: {
+            workspaceId: ctx.workspaceId!,
+            equipment: {
+              checkEvents: {
+                some: {
+                  setId: ps.setId,
+                  productionName: project.name,
+                },
+              },
+            },
+          },
+          orderBy: { reportedAt: "desc" },
+          include: {
+            equipment: { select: { serial: true, name: true, category: { select: { name: true } } } },
+            reporter:  { select: { displayName: true, email: true } },
+            repairLogs: {
+              orderBy: { repairedAt: "desc" },
+              take: 1,
+              select: { description: true, repairedByName: true, repairedAt: true },
+            },
+          },
+        });
+      }),
+  }),
+
   updateStatus: workspaceProcedure
     .input(z.object({
       workspaceId: z.string(),

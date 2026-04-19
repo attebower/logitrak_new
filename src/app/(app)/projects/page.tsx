@@ -13,13 +13,15 @@
 import { useState } from "react";
 import {
   Plus, Film, Zap, Calendar, ChevronDown, Building2,
-  MapPin, Layers, Package, X, ChevronRight,
+  MapPin, Layers, Package, X, ChevronRight, FileDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { cn } from "@/lib/utils";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "@/server/routers/_app";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -428,31 +430,125 @@ function AddSetModal({
 
 // ── Set Equipment Drawer ──────────────────────────────────────────────────
 
+type DrawerTab = "equipment" | "photos" | "layouts" | "damage";
+
 function SetEquipmentDrawer({
   projectId,
+  projectSetId,
   setId,
   setName,
   stageName,
   workspaceId,
   onClose,
 }: {
-  projectId:   string;
-  setId:       string;
-  setName:     string;
-  stageName:   string;
-  workspaceId: string;
-  onClose:     () => void;
+  projectId:    string;
+  projectSetId: string;
+  setId:        string;
+  setName:      string;
+  stageName:    string;
+  workspaceId:  string;
+  onClose:      () => void;
 }) {
-  const { data: equipment, isLoading } = trpc.project.sets.equipment.useQuery({
-    workspaceId,
-    projectId,
-    setId,
+  const [tab, setTab] = useState<DrawerTab>("equipment");
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
+
+  const utils = trpc.useUtils();
+
+  const { data: equipment, isLoading: eqLoading } = trpc.project.sets.equipment.useQuery({
+    workspaceId, projectId, setId,
   });
+  const { data: photos,  isLoading: photosLoading } = trpc.project.setAttachments.listPhotos.useQuery(
+    { workspaceId, projectSetId },
+  );
+  const { data: layouts, isLoading: layoutsLoading } = trpc.project.setAttachments.listLayouts.useQuery(
+    { workspaceId, projectSetId },
+  );
+  const { data: damage,  isLoading: damageLoading } = trpc.project.setAttachments.damageOnSet.useQuery(
+    { workspaceId, projectId, projectSetId },
+  );
+
+  // Signed URLs for rendering thumbnails
+  const photoPaths   = (photos  ?? []).map((p) => p.storagePath);
+  const layoutPaths  = (layouts ?? []).map((l) => l.storagePath);
+  const { data: photoUrls }  = trpc.project.setAttachments.signUrls.useQuery(
+    { workspaceId, bucket: "set-photos",  paths: photoPaths  },
+    { enabled: photoPaths.length  > 0 },
+  );
+  const { data: layoutUrls } = trpc.project.setAttachments.signUrls.useQuery(
+    { workspaceId, bucket: "set-layouts", paths: layoutPaths },
+    { enabled: layoutPaths.length > 0 },
+  );
+
+  const deletePhoto  = trpc.project.setAttachments.deletePhoto.useMutation({
+    onSuccess: async (res) => {
+      await fetch("/api/sets/delete-file", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ bucket: "set-photos", storagePath: res.storagePath }),
+      }).catch(() => {});
+      void utils.project.setAttachments.listPhotos.invalidate({ workspaceId, projectSetId });
+    },
+  });
+  const deleteLayout = trpc.project.setAttachments.deleteLayout.useMutation({
+    onSuccess: async (res) => {
+      await fetch("/api/sets/delete-file", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ bucket: "set-layouts", storagePath: res.storagePath }),
+      }).catch(() => {});
+      void utils.project.setAttachments.listLayouts.invalidate({ workspaceId, projectSetId });
+    },
+  });
+
+  async function handleUpload(file: File, bucket: "set-photos" | "set-layouts") {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("bucket", bucket);
+    fd.append("projectSetId", projectSetId);
+    const res = await fetch("/api/sets/upload", { method: "POST", body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Upload failed" }));
+      alert(err.error ?? "Upload failed");
+      return;
+    }
+    if (bucket === "set-photos") {
+      void utils.project.setAttachments.listPhotos.invalidate({ workspaceId, projectSetId });
+    } else {
+      void utils.project.setAttachments.listLayouts.invalidate({ workspaceId, projectSetId });
+    }
+  }
+
+  async function handleSnapshot() {
+    setSnapshotBusy(true);
+    try {
+      const res = await fetch(`/api/sets/snapshot?projectSetId=${encodeURIComponent(projectSetId)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Snapshot failed" }));
+        alert(err.error ?? "Snapshot failed");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${setName} snapshot.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setSnapshotBusy(false);
+    }
+  }
+
+  const TABS: { id: DrawerTab; label: string; count: number | null }[] = [
+    { id: "equipment", label: "Equipment", count: equipment?.length ?? null },
+    { id: "photos",    label: "Photos",    count: photos?.length    ?? null },
+    { id: "layouts",   label: "Layouts",   count: layouts?.length   ?? null },
+    { id: "damage",    label: "Damage",    count: damage?.length    ?? null },
+  ];
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md bg-white shadow-xl flex flex-col h-full">
+      <div className="relative z-10 w-full max-w-lg bg-white shadow-xl flex flex-col h-full">
+        {/* Header */}
         <div className="px-5 py-4 border-b border-grey-mid flex items-start justify-between">
           <div>
             <p className="text-[11px] text-grey uppercase tracking-wider font-semibold mb-0.5">{stageName}</p>
@@ -463,54 +559,386 @@ function SetEquipmentDrawer({
           </button>
         </div>
 
+        {/* Tab bar */}
+        <div className="px-5 border-b border-grey-mid flex gap-0 overflow-x-auto">
+          {TABS.map((t) => {
+            const isActive = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "px-3 py-2.5 text-[12px] font-medium border-b-2 transition-colors whitespace-nowrap",
+                  isActive
+                    ? "border-brand-blue text-brand-blue"
+                    : "border-transparent text-grey hover:text-surface-dark"
+                )}
+              >
+                {t.label}
+                {t.count !== null && (
+                  <span className={cn("ml-1.5 text-[10px]", isActive ? "text-brand-blue" : "text-slate-400")}>
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab content */}
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="p-6 text-[13px] text-slate-400">Loading equipment…</div>
-          ) : !equipment?.length ? (
-            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-                <Package size={18} className="text-slate-400" />
-              </div>
-              <p className="text-[14px] font-semibold text-surface-dark mb-1">No equipment on this set</p>
-              <p className="text-[12px] text-slate-400">Equipment checked out to this set will appear here.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-grey-mid">
-              {equipment.map((item) => {
-                const lastEvent = item.checkEvents[0];
-                return (
-                  <div key={item.id} className="px-5 py-3.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-semibold text-surface-dark truncate">{item.name}</p>
-                        <p className="text-serial text-grey mt-0.5">{item.serial}</p>
-                        {item.category && (
-                          <p className="text-[11px] text-slate-400 mt-0.5">{item.category.name}</p>
-                        )}
-                      </div>
-                      <span className={`text-[11px] font-semibold shrink-0 ${STATUS_COLOURS[item.status] ?? "text-grey"}`}>
-                        {STATUS_EQ_LABELS[item.status] ?? item.status}
-                      </span>
-                    </div>
-                    {lastEvent?.user && (
-                      <p className="text-[11px] text-slate-400 mt-1.5">
-                        Issued to {lastEvent.user.displayName ?? lastEvent.user.email}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          {tab === "equipment" && (
+            <EquipmentTab
+              isLoading={eqLoading}
+              equipment={equipment}
+            />
+          )}
+          {tab === "photos" && (
+            <PhotosTab
+              isLoading={photosLoading}
+              photos={photos ?? []}
+              urls={photoUrls ?? {}}
+              onUpload={(f) => handleUpload(f, "set-photos")}
+              onDelete={(id) => deletePhoto.mutate({ workspaceId, photoId: id })}
+            />
+          )}
+          {tab === "layouts" && (
+            <LayoutsTab
+              isLoading={layoutsLoading}
+              layouts={layouts ?? []}
+              urls={layoutUrls ?? {}}
+              onUpload={(f) => handleUpload(f, "set-layouts")}
+              onDelete={(id) => deleteLayout.mutate({ workspaceId, layoutId: id })}
+            />
+          )}
+          {tab === "damage" && (
+            <DamageTab isLoading={damageLoading} damage={damage ?? []} />
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-grey-mid">
-          <p className="text-[12px] text-slate-400">
-            {equipment?.length ?? 0} item{(equipment?.length ?? 0) !== 1 ? "s" : ""} currently on this set
+        {/* Footer: Snapshot button */}
+        <div className="px-5 py-3.5 border-t border-grey-mid flex items-center justify-between gap-3">
+          <p className="text-[11px] text-slate-400">
+            Snapshot combines all four tabs into a branded PDF.
           </p>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSnapshot}
+            disabled={snapshotBusy}
+          >
+            <FileDown size={13} className="mr-1" />
+            {snapshotBusy ? "Generating…" : "Set Snapshot PDF"}
+          </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Drawer tab components ──────────────────────────────────────────────
+
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type EquipmentItem = RouterOutputs["project"]["sets"]["equipment"][number];
+
+function EquipmentTab({
+  isLoading,
+  equipment,
+}: {
+  isLoading: boolean;
+  equipment: EquipmentItem[] | undefined;
+}) {
+  if (isLoading) return <div className="p-6 text-[13px] text-slate-400">Loading equipment…</div>;
+  if (!equipment?.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+          <Package size={18} className="text-slate-400" />
+        </div>
+        <p className="text-[14px] font-semibold text-surface-dark mb-1">No equipment on this set</p>
+        <p className="text-[12px] text-slate-400">Equipment checked out to this set will appear here.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="divide-y divide-grey-mid">
+      {equipment.map((item) => {
+        const lastEvent = item.checkEvents[0];
+        return (
+          <div key={item.id} className="px-5 py-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-surface-dark truncate">{item.name}</p>
+                <p className="text-serial text-grey mt-0.5">{item.serial}</p>
+                {item.category && (
+                  <p className="text-[11px] text-slate-400 mt-0.5">{item.category.name}</p>
+                )}
+              </div>
+              <span className={`text-[11px] font-semibold shrink-0 ${STATUS_COLOURS[item.status] ?? "text-grey"}`}>
+                {STATUS_EQ_LABELS[item.status] ?? item.status}
+              </span>
+            </div>
+            {lastEvent?.user && (
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                Issued to {lastEvent.user.displayName ?? lastEvent.user.email}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+type PhotoItem = RouterOutputs["project"]["setAttachments"]["listPhotos"][number];
+
+function PhotosTab({
+  isLoading, photos, urls, onUpload, onDelete,
+}: {
+  isLoading: boolean;
+  photos:    PhotoItem[];
+  urls:      Record<string, string>;
+  onUpload:  (file: File) => void;
+  onDelete:  (photoId: string) => void;
+}) {
+  return (
+    <div className="p-5">
+      <UploadDropzone
+        label="Add Photos"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/gif"
+        hint="JPG, PNG, WebP, HEIC up to 15MB"
+        onFile={onUpload}
+      />
+
+      {isLoading ? (
+        <div className="mt-6 text-[13px] text-slate-400">Loading photos…</div>
+      ) : photos.length === 0 ? (
+        <p className="mt-6 text-[12px] text-slate-400 text-center">No photos yet. Drop images above to upload.</p>
+      ) : (
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          {photos.map((p) => {
+            const url = urls[p.storagePath];
+            return (
+              <div key={p.id} className="relative group bg-grey-light rounded-btn overflow-hidden border border-grey-mid aspect-square">
+                {url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={url} alt={p.caption ?? p.filename} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-400">
+                    Loading…
+                  </div>
+                )}
+                <button
+                  onClick={() => { if (confirm("Delete this photo?")) onDelete(p.id); }}
+                  className="absolute top-1 right-1 p-1 rounded-full bg-white/90 text-slate-500 hover:text-status-red opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                  title="Delete photo"
+                >
+                  <X size={12} />
+                </button>
+                {p.caption && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[10px] px-2 py-1 line-clamp-1">
+                    {p.caption}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type LayoutItem = RouterOutputs["project"]["setAttachments"]["listLayouts"][number];
+
+function LayoutsTab({
+  isLoading, layouts, urls, onUpload, onDelete,
+}: {
+  isLoading: boolean;
+  layouts:   LayoutItem[];
+  urls:      Record<string, string>;
+  onUpload:  (file: File) => void;
+  onDelete:  (layoutId: string) => void;
+}) {
+  return (
+    <div className="p-5">
+      <UploadDropzone
+        label="Add Lighting Layout"
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        hint="PDF or image up to 25MB"
+        onFile={onUpload}
+      />
+
+      {isLoading ? (
+        <div className="mt-6 text-[13px] text-slate-400">Loading layouts…</div>
+      ) : layouts.length === 0 ? (
+        <p className="mt-6 text-[12px] text-slate-400 text-center">No layouts yet. Upload lighting plans or plots above.</p>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {layouts.map((l) => {
+            const url = urls[l.storagePath];
+            const isPdf = l.mimeType === "application/pdf";
+            return (
+              <div key={l.id} className="border border-grey-mid rounded-btn p-3 bg-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-surface-dark truncate">
+                      {l.title ?? l.filename}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {isPdf ? "PDF" : "Image"} · {Math.round(l.sizeBytes / 1024)} KB
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {url && (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded text-slate-400 hover:text-brand-blue hover:bg-grey-light"
+                        title="Open"
+                      >
+                        <FileDown size={13} />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => { if (confirm("Delete this layout?")) onDelete(l.id); }}
+                      className="p-1.5 rounded text-slate-400 hover:text-status-red hover:bg-status-red/5"
+                      title="Delete"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+                {!isPdf && url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={url} alt={l.title ?? l.filename} className="mt-3 w-full rounded border border-grey-mid object-contain max-h-64 bg-grey-light" />
+                )}
+                {l.description && (
+                  <p className="text-[11px] text-slate-500 mt-2">{l.description}</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type DamageItem = RouterOutputs["project"]["setAttachments"]["damageOnSet"][number];
+
+function DamageTab({
+  isLoading, damage,
+}: {
+  isLoading: boolean;
+  damage: DamageItem[];
+}) {
+  if (isLoading) return <div className="p-6 text-[13px] text-slate-400">Loading damage reports…</div>;
+  if (!damage.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+          <Package size={18} className="text-slate-400" />
+        </div>
+        <p className="text-[14px] font-semibold text-surface-dark mb-1">No damage reports</p>
+        <p className="text-[12px] text-slate-400">Damage on equipment used on this set will appear here.</p>
+      </div>
+    );
+  }
+  function fmt(d: Date | string | null | undefined) {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+  return (
+    <div className="divide-y divide-grey-mid">
+      {damage.map((d) => {
+        const repair = d.repairLogs[0];
+        return (
+          <div key={d.id} className={cn(
+            "px-5 py-4 border-l-2",
+            repair ? "border-status-teal" : "border-status-red",
+          )}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-surface-dark">{d.equipment.name}</p>
+                <p className="text-[11px] text-slate-400">{d.equipment.serial}</p>
+              </div>
+              <span className="text-[11px] text-slate-400 shrink-0">{fmt(d.reportedAt)}</span>
+            </div>
+            <p className="text-[12px] text-surface-dark mt-2">{d.description}</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Reported by {d.reporter?.displayName ?? d.reporter?.email ?? "Unknown"}
+            </p>
+            {repair && (
+              <div className="mt-3 pt-3 pl-3 border-l-2 border-status-teal">
+                <p className="text-[11px] font-semibold text-status-teal">
+                  Repaired · {fmt(repair.repairedAt)}
+                </p>
+                {repair.description && (
+                  <p className="text-[12px] text-surface-dark mt-1">{repair.description}</p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function UploadDropzone({
+  label, accept, hint, onFile,
+}: {
+  label:  string;
+  accept: string;
+  hint:   string;
+  onFile: (file: File) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || !files[0]) return;
+    setBusy(true);
+    try {
+      for (const f of Array.from(files)) {
+        await onFile(f);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <label
+      className={cn(
+        "block border-2 border-dashed rounded-btn px-4 py-5 text-center transition-colors cursor-pointer",
+        dragOver ? "border-brand-blue bg-brand-blue/5" : "border-grey-mid hover:border-brand-blue/40 hover:bg-grey-light",
+      )}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault(); setDragOver(false);
+        void handleFiles(e.dataTransfer.files);
+      }}
+    >
+      <input
+        type="file"
+        accept={accept}
+        multiple
+        className="hidden"
+        disabled={busy}
+        onChange={(e) => void handleFiles(e.target.files)}
+      />
+      <div className="flex flex-col items-center gap-1">
+        <Plus size={16} className="text-brand-blue" />
+        <p className="text-[13px] font-semibold text-surface-dark">
+          {busy ? "Uploading…" : label}
+        </p>
+        <p className="text-[11px] text-slate-400">{hint}</p>
+      </div>
+    </label>
   );
 }
 
@@ -554,9 +982,10 @@ function ProjectDetail({
 
   const [showAddSet,      setShowAddSet]      = useState(false);
   const [activeSetDrawer, setActiveSetDrawer] = useState<{
-    setId:     string;
-    setName:   string;
-    stageName: string;
+    projectSetId: string;
+    setId:        string;
+    setName:      string;
+    stageName:    string;
   } | null>(null);
 
   const { data: projects } = trpc.project.list.useQuery({ workspaceId });
@@ -719,9 +1148,10 @@ function ProjectDetail({
                 key={ps.id}
                 className="px-5 py-3.5 flex items-center gap-4 group hover:bg-grey-light/60 transition-colors cursor-pointer"
                 onClick={() => setActiveSetDrawer({
-                  setId:     ps.set.id,
-                  setName:   ps.set.name,
-                  stageName: ps.stage.name,
+                  projectSetId: ps.id,
+                  setId:        ps.set.id,
+                  setName:      ps.set.name,
+                  stageName:    ps.stage.name,
                 })}
               >
                 <div className="w-8 h-8 rounded-lg bg-brand-blue/8 flex items-center justify-center shrink-0">
@@ -773,6 +1203,7 @@ function ProjectDetail({
       {activeSetDrawer && (
         <SetEquipmentDrawer
           projectId={projectId}
+          projectSetId={activeSetDrawer.projectSetId}
           setId={activeSetDrawer.setId}
           setName={activeSetDrawer.setName}
           stageName={activeSetDrawer.stageName}
