@@ -128,17 +128,18 @@ export const reportsRouter = router({
   byLocation: workspaceProcedure
     .input(
       z.object({
-        workspaceId: z.string(),
-        studioId: z.string().optional(),
-        stageId: z.string().optional(),
-        setId: z.string().optional(),
+        workspaceId:  z.string(),
+        studioId:     z.string().optional(),
+        stageId:      z.string().optional(),
+        setId:        z.string().optional(),
+        onLocationId: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      if (!input.studioId && !input.stageId && !input.setId) {
+      if (!input.studioId && !input.stageId && !input.setId && !input.onLocationId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "At least one location filter (studioId, stageId, or setId) is required",
+          message: "At least one location filter is required",
         });
       }
 
@@ -151,10 +152,11 @@ export const reportsRouter = router({
             orderBy: { createdAt: "desc" },
             take: 1,
             include: {
-              studio: { select: { name: true } },
-              stage: { select: { name: true } },
-              set: { select: { name: true } },
-              user: { select: { displayName: true } },
+              studio:     { select: { name: true } },
+              stage:      { select: { name: true } },
+              set:        { select: { name: true } },
+              onLocation: { select: { name: true } },
+              user:       { select: { displayName: true } },
             },
           },
         },
@@ -164,9 +166,10 @@ export const reportsRouter = router({
       return equipment.filter((e) => {
         const latest = e.checkEvents[0];
         if (!latest) return false;
-        if (input.studioId && latest.studioId !== input.studioId) return false;
-        if (input.stageId && latest.stageId !== input.stageId) return false;
-        if (input.setId && latest.setId !== input.setId) return false;
+        if (input.studioId     && latest.studioId     !== input.studioId)     return false;
+        if (input.stageId      && latest.stageId      !== input.stageId)      return false;
+        if (input.setId        && latest.setId        !== input.setId)        return false;
+        if (input.onLocationId && latest.onLocationId !== input.onLocationId) return false;
         return true;
       });
     }),

@@ -130,7 +130,7 @@ export default function CheckInOutPage() {
         setScanSearch("");
         setJustIssued(false);
         checkOut.reset();
-      }, 2500);
+      }, 1500);
     },
     onError: (err) => setOutError(err.message),
   });
@@ -147,7 +147,7 @@ export default function CheckInOutPage() {
         setDamageEditingSerial(null);
         setJustReturned(false);
         checkIn.reset();
-      }, 2500);
+      }, 1500);
     },
     onError: (err) => setInError(err.message),
   });
@@ -279,7 +279,7 @@ export default function CheckInOutPage() {
   }, [handleSerialInput]);
 
   function addWarning(w: ScanWarning) {
-    setWarnings((prev) => [w, ...prev.filter((x) => x.serial !== w.serial)].slice(0, 3));
+    setWarnings([w]);
   }
   function clearWarning(serial: string) {
     setWarnings((prev) => prev.filter((x) => x.serial !== serial));
@@ -410,13 +410,12 @@ export default function CheckInOutPage() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {/* Success banner */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 relative">
+          {/* Success cutaway — replaces the old green banner with a full-area animation */}
           {(justIssued || justReturned) && (
-            <SuccessBanner
-              message={justIssued
-                ? `${lastOutCount} item${lastOutCount !== 1 ? "s" : ""} issued successfully.`
-                : `${lastInCount} item${lastInCount !== 1 ? "s" : ""} returned successfully.`}
+            <SuccessCutaway
+              kind={justIssued ? "out" : "in"}
+              count={justIssued ? lastOutCount : lastInCount}
             />
           )}
 
@@ -660,13 +659,20 @@ function BatchPanel({
   onSaveRepair: (s: string) => void;
   onCancelRepair: () => void;
 }) {
+  const hasItems = items.length > 0;
   return (
-    <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+    <div className="relative bg-white rounded-card border border-grey-mid overflow-hidden">
+      {hasItems && (
+        <>
+          <div className="absolute left-0  top-0 bottom-0 w-1 bg-status-green z-10" aria-hidden />
+          <div className="absolute right-0 top-0 bottom-0 w-1 bg-status-green z-10" aria-hidden />
+        </>
+      )}
       <div className="px-5 py-3.5 border-b border-grey-mid flex items-center justify-between">
         <h2 className="text-[13px] font-semibold text-surface-dark">
           Batch <span className="text-grey font-normal">({items.length})</span>
         </h2>
-        {items.length > 0 && (
+        {hasItems && (
           <button onClick={onClear} className="text-[11px] text-grey hover:text-status-red">
             Clear all
           </button>
@@ -935,11 +941,30 @@ function Field({ label, required, optional, children }: {
   );
 }
 
-function SuccessBanner({ message }: { message: string }) {
+function SuccessCutaway({ kind, count }: { kind: "out" | "in"; count: number }) {
+  const verb = kind === "out" ? "Checked out" : "Checked in";
   return (
-    <div className="bg-status-green/5 border border-status-green/30 rounded-card px-4 py-3 flex items-center gap-3">
-      <span className="text-[16px]">✅</span>
-      <span className="text-[13px] font-semibold text-surface-dark">{message}</span>
+    <div
+      className="absolute inset-0 z-20 flex items-center justify-center backdrop-blur-md bg-white/30 animate-cutaway"
+      aria-live="polite"
+      role="status"
+    >
+      <div
+        className="bg-white rounded-panel border border-grey-mid px-12 py-10 flex flex-col items-center gap-4 min-w-[320px]"
+        style={{ boxShadow: "0 20px 50px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(15, 23, 42, 0.04)" }}
+      >
+        <div className="w-14 h-14 rounded-full bg-status-green flex items-center justify-center animate-check-pop">
+          <svg viewBox="0 0 24 24" className="w-8 h-8 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+        <div className="text-center">
+          <div className="text-[18px] font-bold text-surface-dark leading-tight">{verb}</div>
+          <div className="text-[12px] text-grey mt-1">
+            {count} item{count !== 1 ? "s" : ""} {kind === "out" ? "issued" : "returned"}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

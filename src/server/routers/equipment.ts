@@ -137,7 +137,7 @@ export const equipmentRouter = router({
       const [items, total] = await Promise.all([
         ctx.prisma.equipment.findMany({
           where,
-          include: { category: true },
+          include: { category: true, product: true },
           orderBy: { serial: "asc" },
           take: input.limit,
           skip: input.offset,
@@ -186,7 +186,7 @@ export const equipmentRouter = router({
           category: true,
           checkEvents: {
             orderBy: { createdAt: "desc" },
-            include: { user: true, studio: true, stage: true, set: true },
+            include: { user: true, studio: true, stage: true, set: true, onLocation: true },
           },
           damageReports: {
             orderBy: { reportedAt: "desc" },

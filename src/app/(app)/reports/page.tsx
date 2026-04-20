@@ -18,20 +18,56 @@ import { StatusPill, effectiveStatus as sharedEffectiveStatus } from "@/componen
 import { locationChain } from "@/lib/format";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
+import { downloadReportPdf } from "@/lib/pdf/ReportPdf";
 import type { ColumnDef } from "@/components/shared/ReportTable";
+import type { ReportPdfColumn } from "@/lib/pdf/ReportPdf";
 import type { ReportFilters } from "@/components/shared/ReportFilterBar";
 import type { EquipmentDetail } from "@/components/shared/EquipmentDetailPanel";
 
 // ── Tab definition ────────────────────────────────────────────────────────
 
-const TABS = [
-  { id: "overview",    label: "Overview" },
-  { id: "checked-out", label: "Checked Out" },
-  { id: "damaged",     label: "Damaged" },
-  { id: "by-location", label: "By Location" },
-] as const;
+type TabId =
+  | "available" | "issued"
+  | "by-studio" | "by-stage" | "by-set" | "by-on-location"
+  | "damaged"   | "repaired"
+  | "custom";
 
-type TabId = typeof TABS[number]["id"];
+interface TabItem { id: TabId; label: string }
+interface TabGroup { label: string; items: TabItem[] }
+
+const TAB_GROUPS: TabGroup[] = [
+  {
+    label: "Status",
+    items: [
+      { id: "available", label: "Available" },
+      { id: "issued",    label: "Issued" },
+    ],
+  },
+  {
+    label: "Location",
+    items: [
+      { id: "by-studio",      label: "By Studio" },
+      { id: "by-stage",       label: "By Stage" },
+      { id: "by-set",         label: "By Set" },
+      { id: "by-on-location", label: "By Location" },
+    ],
+  },
+  {
+    label: "Damage",
+    items: [
+      { id: "damaged",  label: "Damaged" },
+      { id: "repaired", label: "Repaired" },
+    ],
+  },
+  {
+    label: "Custom",
+    items: [
+      { id: "custom", label: "Custom Report" },
+    ],
+  },
+];
+
+const TABS: TabItem[] = TAB_GROUPS.flatMap((g) => g.items);
 
 // ── CSV export helper ─────────────────────────────────────────────────────
 
@@ -78,13 +114,21 @@ const damagePill = (ds: string) => {
 
 const categoryText = (c: string) => <span className="text-[13px] text-grey">{c || "—"}</span>;
 
-const CHECKED_OUT_COLS: ColumnDef[] = [
+const STANDARD_COLS: ColumnDef[] = [
+  { key: "serial",   label: "Serial",   width: "w-28" },
+  { key: "name",     label: "Name",     width: "w-full" },
+  { key: "category", label: "Category", width: "w-40", render: (row) => categoryText(String(row.category ?? "")) },
+  { key: "status",   label: "Status",   width: "w-36", render: (row) => statusPill(String(row.status ?? ""), String(row.damageStatus ?? "normal")) },
+  { key: "added",    label: "Added",    width: "w-32" },
+];
+
+const ISSUED_COLS: ColumnDef[] = [
   { key: "serial",    label: "Serial",         width: "w-28" },
   { key: "name",      label: "Name",           width: "w-full" },
   { key: "category",  label: "Category",       width: "w-40", render: (row) => categoryText(String(row.category ?? "")) },
   { key: "location",  label: "Location",       width: "w-48" },
-  { key: "checkedBy", label: "Checked Out By",  width: "w-40" },
-  { key: "since",     label: "Since",           width: "w-28" },
+  { key: "checkedBy", label: "Checked Out By", width: "w-40" },
+  { key: "since",     label: "Since",          width: "w-28" },
 ];
 
 const DAMAGED_COLS: ColumnDef[] = [
@@ -95,13 +139,18 @@ const DAMAGED_COLS: ColumnDef[] = [
   { key: "reportedAt",   label: "Reported",    width: "w-28" },
 ];
 
-const BY_LOCATION_COLS: ColumnDef[] = [
+const LOCATION_COLS: ColumnDef[] = [
   { key: "serial",   label: "Serial",   width: "w-28" },
   { key: "name",     label: "Name",     width: "w-full" },
   { key: "status",   label: "Status",   width: "w-36", render: (row) => statusPill(String(row.status ?? ""), String(row.damageStatus ?? "normal")) },
   { key: "location", label: "Location", width: "w-48" },
   { key: "since",    label: "Since",    width: "w-28" },
 ];
+
+function formatDate(d: Date | string | null | undefined): string {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
 // -- Equipment expanded detail --
 
@@ -232,9 +281,10 @@ function _EquipmentExpandedDetail({ row, workspaceId }: { row: Record<string, un
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
-  const { workspaceId } = useWorkspace();
+  const { workspaceId, workspaceName } = useWorkspace();
+  const { data: me } = trpc.user.me.useQuery();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>("available");
   const [filters, setFilters] = useState<ReportFilters>({});
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -247,13 +297,20 @@ export default function ReportsPage() {
   const detail: EquipmentDetail | null = useMemo(() => {
     if (!detailData) return null;
     const eq = detailData;
-    type CEType = {id:string;eventType:string;createdAt:string;user?:{displayName?:string;email?:string};studio?:{name?:string};stage?:{name?:string};set?:{name?:string};positionType?:string;exactLocationDescription?:string;};
+    type CEType = {id:string;eventType:string;createdAt:string;user?:{displayName?:string;email?:string};studio?:{name?:string};stage?:{name?:string};set?:{name?:string};onLocation?:{name?:string};positionType?:string;exactLocationDescription?:string;};
     const events = eq.checkEvents as unknown as CEType[];
     const latest = events[0];
     const isCurrentlyIssued = eq.status === "checked_out" && latest?.eventType === "check_out";
     const currentLocation = isCurrentlyIssued && latest
-      ? locationChain([latest.studio?.name, latest.stage?.name, latest.set?.name, latest.positionType, latest.exactLocationDescription])
-      : undefined;
+      ? {
+          studio:     latest.studio?.name ?? null,
+          stage:      latest.stage?.name ?? null,
+          set:        latest.set?.name ?? null,
+          onLocation: latest.onLocation?.name ?? null,
+          position:   latest.positionType ?? null,
+          exact:      latest.exactLocationDescription ?? null,
+        }
+      : null;
     return {
       id:       eq.id,
       serial:   eq.serial,
@@ -267,13 +324,13 @@ export default function ReportsPage() {
       checkHistory: events.map((ce) => ({
         id:        ce.id,
         type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
-        location:  locationChain([ce.studio?.name, ce.stage?.name, ce.set?.name, ce.positionType, ce.exactLocationDescription]),
         locationParts: {
-          studio:   ce.studio?.name ?? null,
-          stage:    ce.stage?.name ?? null,
-          set:      ce.set?.name ?? null,
-          position: ce.positionType ?? null,
-          exact:    ce.exactLocationDescription ?? null,
+          studio:     ce.studio?.name ?? null,
+          stage:      ce.stage?.name ?? null,
+          set:        ce.set?.name ?? null,
+          onLocation: ce.onLocation?.name ?? null,
+          position:   ce.positionType ?? null,
+          exact:      ce.exactLocationDescription ?? null,
         },
         checkedBy: ce.user?.displayName ?? ce.user?.email ?? "Unknown",
         timestamp: new Date(ce.createdAt).toISOString(),
@@ -291,23 +348,16 @@ export default function ReportsPage() {
     };
   }, [detailData]);
 
-  // ── Overview tab (analytics) ──────────────────────────────────────────
+  // ── Overview (always loaded, shown statically at top) ────────────────
 
   const { data: overviewData } = trpc.reports.wrapSummary.useQuery(
     { workspaceId },
-    { enabled: activeTab === "overview" }
   );
 
   // ── Shared filter data ──────────────────────────────────────────────
 
-  const { data: allCategories } = trpc.category.list.useQuery(
-    { workspaceId },
-    { enabled: activeTab !== "overview" }
-  );
-  const { data: allStudios } = trpc.location.studio.list.useQuery(
-    { workspaceId },
-    { enabled: activeTab !== "overview" }
-  );
+  const { data: allCategories } = trpc.category.list.useQuery({ workspaceId });
+  const { data: allStudios }    = trpc.location.studio.list.useQuery({ workspaceId });
 
   const categoryOptions = (allCategories ?? []).map((c) => ({ value: c.id, label: c.name }));
   const locationOptions = (allStudios    ?? []).map((s) => ({ value: s.id, label: s.name }));
@@ -349,13 +399,31 @@ export default function ReportsPage() {
     });
   }
 
-  // ── Checked Out tab ──────────────────────────────────────────────────
+  // ── Status: Available ────────────────────────────────────────────────
 
-  const { data: checkedOutData } = trpc.reports.checkedOut.useQuery(
-    { workspaceId },
-    { enabled: activeTab === "checked-out" }
+  const { data: availableData } = trpc.reports.equipmentStatus.useQuery(
+    { workspaceId, status: "available", damageStatus: "normal", limit: 200 },
+    { enabled: activeTab === "available" }
   );
-  const checkedOutRows = applyFilters((checkedOutData ?? []).map((e) => {
+  const availableRows = applyFilters((availableData?.items ?? []).map((e) => ({
+    id:           e.id,
+    serial:       e.serial,
+    name:         e.name,
+    category:     e.category?.name ?? "—",
+    categoryId:   e.categoryId ?? undefined,
+    status:       e.status,
+    damageStatus: e.damageStatus,
+    rawDate:      e.createdAt,
+    added:        formatDate(e.createdAt),
+  })));
+
+  // ── Status: Issued ───────────────────────────────────────────────────
+
+  const { data: issuedData } = trpc.reports.checkedOut.useQuery(
+    { workspaceId },
+    { enabled: activeTab === "issued" }
+  );
+  const issuedRows = applyFilters((issuedData ?? []).map((e) => {
     const evt = e.checkEvents[0];
     const loc = [evt?.studio?.name, evt?.stage?.name].filter(Boolean).join(" / ");
     return {
@@ -374,7 +442,59 @@ export default function ReportsPage() {
     };
   }));
 
-  // ── Damaged tab ──────────────────────────────────────────────────────
+  // ── Location: shared state + data ────────────────────────────────────
+
+  const [locationStudioId,     setLocationStudioId]     = useState("");
+  const [locationStageId,      setLocationStageId]      = useState("");
+  const [locationSetId,        setLocationSetId]        = useState("");
+  const [locationOnLocationId, setLocationOnLocationId] = useState("");
+
+  const { data: stagesForStudio } = trpc.location.stage.list.useQuery(
+    { workspaceId, studioId: locationStudioId },
+    { enabled: !!locationStudioId && (activeTab === "by-stage" || activeTab === "by-set") }
+  );
+  const { data: setsForStage } = trpc.location.set.list.useQuery(
+    { workspaceId, stageId: locationStageId },
+    { enabled: !!locationStageId && activeTab === "by-set" }
+  );
+  const { data: onLocations } = trpc.location.onLocation.list.useQuery(
+    { workspaceId },
+    { enabled: activeTab === "by-on-location" }
+  );
+
+  const locationFilterInput = (() => {
+    if (activeTab === "by-studio"      && locationStudioId)     return { studioId:     locationStudioId };
+    if (activeTab === "by-stage"       && locationStageId)      return { stageId:      locationStageId };
+    if (activeTab === "by-set"         && locationSetId)        return { setId:        locationSetId };
+    if (activeTab === "by-on-location" && locationOnLocationId) return { onLocationId: locationOnLocationId };
+    return null;
+  })();
+
+  const { data: locationData } = trpc.reports.byLocation.useQuery(
+    { workspaceId, ...(locationFilterInput ?? {}) },
+    { enabled: !!locationFilterInput }
+  );
+
+  const locationRows = applyFilters((locationData ?? []).map((e) => {
+    const evt = e.checkEvents[0];
+    const loc = evt?.onLocation?.name
+      ? evt.onLocation.name + (evt?.set?.name ? ` → ${evt.set.name}` : "")
+      : [evt?.studio?.name, evt?.stage?.name, evt?.set?.name].filter(Boolean).join(" → ");
+    return {
+      id:           e.id,
+      serial:       e.serial,
+      name:         e.name,
+      status:       e.status,
+      damageStatus: e.damageStatus,
+      categoryId:   e.categoryId ?? undefined,
+      studioId:     evt?.studioId ?? undefined,
+      rawDate:      evt?.createdAt ?? null,
+      location:     loc || "—",
+      since:        relTime(evt?.createdAt),
+    };
+  }));
+
+  // ── Damage: Damaged ──────────────────────────────────────────────────
 
   const { data: damagedData } = trpc.reports.damaged.useQuery(
     { workspaceId },
@@ -395,39 +515,54 @@ export default function ReportsPage() {
     };
   }));
 
-  // ── By Location tab ──────────────────────────────────────────────────
+  // ── Damage: Repaired ─────────────────────────────────────────────────
 
-  const [locationStudioId, setLocationStudioId] = useState("");
-
-  const { data: byLocationData } = trpc.reports.byLocation.useQuery(
-    { workspaceId, studioId: locationStudioId || undefined },
-    { enabled: activeTab === "by-location" && !!locationStudioId }
+  const { data: repairedData } = trpc.reports.equipmentStatus.useQuery(
+    { workspaceId, damageStatus: "repaired", limit: 200 },
+    { enabled: activeTab === "repaired" }
   );
+  const repairedRows = applyFilters((repairedData?.items ?? []).map((e) => ({
+    id:           e.id,
+    serial:       e.serial,
+    name:         e.name,
+    category:     e.category?.name ?? "—",
+    categoryId:   e.categoryId ?? undefined,
+    status:       e.status,
+    damageStatus: e.damageStatus,
+    rawDate:      e.updatedAt,
+    added:        formatDate(e.updatedAt),
+  })));
 
-  const byLocationRows = applyFilters((byLocationData ?? []).map((e) => {
-    const evt = e.checkEvents[0];
-    const loc = [evt?.studio?.name, evt?.stage?.name, evt?.set?.name].filter(Boolean).join(" → ");
-    return {
-      id:           e.id,
-      serial:       e.serial,
-      name:         e.name,
-      status:       e.status,
-      damageStatus: e.damageStatus,
-      categoryId:   e.categoryId ?? undefined,
-      studioId:     evt?.studioId ?? undefined,
-      rawDate:      evt?.createdAt ?? null,
-      location:     loc || "—",
-      since:        relTime(evt?.createdAt),
-    };
-  }));
+  // ── Custom: full filter over all equipment ───────────────────────────
+
+  const { data: customData } = trpc.reports.equipmentStatus.useQuery(
+    { workspaceId, limit: 200 },
+    { enabled: activeTab === "custom" }
+  );
+  const customRows = applyFilters((customData?.items ?? []).map((e) => ({
+    id:           e.id,
+    serial:       e.serial,
+    name:         e.name,
+    category:     e.category?.name ?? "—",
+    categoryId:   e.categoryId ?? undefined,
+    status:       e.status,
+    damageStatus: e.damageStatus,
+    rawDate:      e.createdAt,
+    added:        formatDate(e.createdAt),
+  })));
 
   // ── Active tab data / columns ─────────────────────────────────────────
 
   const tabConfig: Record<TabId, { columns: ColumnDef[]; rows: Record<string, unknown>[]; filename: string }> = {
-    "overview":    { columns: [],                rows: [],              filename: "logitrak-overview.csv" },
-    "checked-out": { columns: CHECKED_OUT_COLS, rows: checkedOutRows,  filename: "logitrak-checked-out.csv" },
-    "damaged":     { columns: DAMAGED_COLS,     rows: damagedRows,     filename: "logitrak-damaged.csv" },
-    "by-location": { columns: BY_LOCATION_COLS, rows: byLocationRows,  filename: "logitrak-by-location.csv" },
+    "available":       { columns: STANDARD_COLS, rows: availableRows, filename: "logitrak-available.csv" },
+    "issued":          { columns: ISSUED_COLS,   rows: issuedRows,    filename: "logitrak-issued.csv" },
+    "by-studio":       { columns: LOCATION_COLS, rows: locationRows,  filename: "logitrak-by-studio.csv" },
+    "by-stage":        { columns: LOCATION_COLS, rows: locationRows,  filename: "logitrak-by-stage.csv" },
+    "by-set":          { columns: LOCATION_COLS, rows: locationRows,  filename: "logitrak-by-set.csv" },
+    "by-on-location":  { columns: LOCATION_COLS, rows: locationRows,  filename: "logitrak-by-location.csv" },
+    "damaged":         { columns: DAMAGED_COLS,  rows: damagedRows,   filename: "logitrak-damaged.csv" },
+    "repaired":        { columns: STANDARD_COLS, rows: repairedRows,  filename: "logitrak-repaired.csv" },
+    "custom":          { columns: STANDARD_COLS, rows: customRows,    filename: "logitrak-custom.csv" },
   };
 
   const { columns, rows, filename } = tabConfig[activeTab];
@@ -438,84 +573,154 @@ export default function ReportsPage() {
     <>
       <AppTopbar title="Reports" />
 
-      <div className="flex-1 overflow-hidden flex">
-        {/* Sub-sidebar — report sections */}
-        <aside className="w-[220px] shrink-0 bg-white border-r border-grey-mid overflow-y-auto">
-          <nav className="py-4 px-3 space-y-6">
-            <div>
-              <div className="px-2 mb-1.5 text-[10px] font-semibold text-grey uppercase tracking-wider">
-                Reports
-              </div>
-              <ul className="space-y-0.5">
-                {TABS.map((tab) => {
-                  const isActive = activeTab === tab.id;
-                  return (
-                    <li key={tab.id}>
-                      <button
-                        onClick={() => setActiveTab(tab.id)}
-                        className={[
-                          "w-full text-left px-2 py-1.5 rounded-btn text-[13px] transition-colors",
-                          isActive
-                            ? "bg-brand-blue/10 text-brand-blue font-semibold"
-                            : "text-surface-dark hover:bg-grey-light",
-                        ].join(" ")}
-                      >
-                        {tab.label}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </nav>
-        </aside>
+      <div className="flex-1 overflow-y-auto">
+        {/* Static overview — always visible at top */}
+        <div className="p-6">
+          <OverviewPanel data={overviewData} />
+        </div>
 
-        {/* Content column */}
-        <div className="flex-1 overflow-y-auto p-6 pt-5 space-y-4">
-          {/* Universal filter bar — applies to all table tabs */}
-          {activeTab !== "overview" && (
+        {/* Report selector + table area */}
+        <div className="flex">
+          {/* Sub-sidebar — report sections */}
+          <aside className="w-[220px] shrink-0 bg-white border-r border-t border-grey-mid">
+            <nav className="py-4 px-3 space-y-6">
+              {TAB_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <div className="px-2 mb-1.5 text-[10px] font-semibold text-grey uppercase tracking-wider">
+                    {group.label}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {group.items.map((tab) => {
+                      const isActive = activeTab === tab.id;
+                      return (
+                        <li key={tab.id}>
+                          <button
+                            onClick={() => setActiveTab(tab.id)}
+                            className={[
+                              "w-full text-left px-2 py-1.5 rounded-btn text-[13px] transition-colors",
+                              isActive
+                                ? "bg-brand-blue/10 text-brand-blue font-semibold"
+                                : "text-surface-dark hover:bg-grey-light",
+                            ].join(" ")}
+                          >
+                            {tab.label}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </nav>
+          </aside>
+
+          {/* Content column */}
+          <div className="flex-1 p-6 pt-5 space-y-4 border-t border-grey-mid">
             <ReportFilterBar
               filters={filters}
               onChange={setFilters}
               showDateRange
-              statusOptions={activeTab !== "damaged" ? statusOptions : undefined}
+              statusOptions={activeTab === "custom" ? statusOptions : undefined}
               categories={categoryOptions}
-              locations={activeTab !== "by-location" ? locationOptions : undefined}
+              locations={activeTab === "custom" ? locationOptions : undefined}
             />
-          )}
 
-          {/* By-location studio picker — this tab needs a studio selected to load data */}
-          {activeTab === "by-location" && (
-            <div className="bg-white rounded-card border border-grey-mid px-4 py-3 flex items-center gap-4">
-              <label className="text-caption text-grey uppercase">Studio / Venue</label>
-              <select
-                value={locationStudioId}
-                onChange={(e) => setLocationStudioId(e.target.value)}
-                className="flex-1 max-w-xs bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
-              >
-                <option value="">Select a studio…</option>
-                {(allStudios ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+            {/* Location pickers — cascading studio → stage → set, or flat on-location */}
+            {(activeTab === "by-studio" || activeTab === "by-stage" || activeTab === "by-set") && (
+              <div className="bg-white rounded-card border border-grey-mid px-4 py-3 flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <label className="text-caption text-grey uppercase">Studio</label>
+                  <select
+                    value={locationStudioId}
+                    onChange={(e) => { setLocationStudioId(e.target.value); setLocationStageId(""); setLocationSetId(""); }}
+                    className="bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue min-w-[180px]"
+                  >
+                    <option value="">Select a studio…</option>
+                    {(allStudios ?? []).map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-          {/* Overview tab — analytics stat cards */}
-          {activeTab === "overview" && (
-            <OverviewPanel data={overviewData} />
-          )}
+                {(activeTab === "by-stage" || activeTab === "by-set") && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-caption text-grey uppercase">Stage</label>
+                    <select
+                      value={locationStageId}
+                      onChange={(e) => { setLocationStageId(e.target.value); setLocationSetId(""); }}
+                      disabled={!locationStudioId}
+                      className="bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue min-w-[180px] disabled:opacity-50"
+                    >
+                      <option value="">Select a stage…</option>
+                      {(stagesForStudio ?? []).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-          {/* Table-based tabs */}
-          {activeTab !== "overview" && (
+                {activeTab === "by-set" && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-caption text-grey uppercase">Set</label>
+                    <select
+                      value={locationSetId}
+                      onChange={(e) => setLocationSetId(e.target.value)}
+                      disabled={!locationStageId}
+                      className="bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue min-w-[180px] disabled:opacity-50"
+                    >
+                      <option value="">Select a set…</option>
+                      {(setsForStage ?? []).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "by-on-location" && (
+              <div className="bg-white rounded-card border border-grey-mid px-4 py-3 flex items-center gap-4">
+                <label className="text-caption text-grey uppercase">On Location</label>
+                <select
+                  value={locationOnLocationId}
+                  onChange={(e) => setLocationOnLocationId(e.target.value)}
+                  className="flex-1 max-w-xs bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+                >
+                  <option value="">Select a venue…</option>
+                  {(onLocations ?? []).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}{o.project?.name ? ` · ${o.project.name}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <ReportTable
               columns={columns}
               rows={rows}
               title={TABS.find((t) => t.id === activeTab)?.label ?? ""}
               onExport={() => downloadCsv(filename, rows, columns)}
+              onExportPdf={() => {
+                const tabLabel = TABS.find((t) => t.id === activeTab)?.label ?? "Report";
+                const pdfColumns: ReportPdfColumn[] = columns.map((c) => ({ key: c.key, label: c.label }));
+                void downloadReportPdf(
+                  {
+                    title:         `${tabLabel} Report`,
+                    subtitle:      workspaceName,
+                    meta:          [{ label: "Rows", value: String(rows.length) }],
+                    workspaceName,
+                    generatedBy:   me?.displayName ?? me?.email ?? "Unknown",
+                    generatedAt:   new Date(),
+                    columns:       pdfColumns,
+                    rows,
+                  },
+                  filename.replace(/\.csv$/, ".pdf"),
+                );
+              }}
               onRowClick={(row) => setDetailId(row.id as string)}
             />
-          )}
+          </div>
         </div>
       </div>
 
@@ -549,7 +754,7 @@ function OverviewPanel({ data }: { data: OverviewData | undefined }) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-pulse">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-card border border-grey-mid h-24" />
+          <div key={i} className="bg-white rounded-card border border-grey-mid h-16" />
         ))}
       </div>
     );
@@ -563,7 +768,7 @@ function OverviewPanel({ data }: { data: OverviewData | undefined }) {
   const stats = [
     { label: "Total Equipment", value: data.totalEquipment, sub: "active items",                 colour: "text-surface-dark" },
     { label: "Available",       value: available,           sub: "ready to issue",                colour: "text-status-green" },
-    { label: "Issued",          value: data.checkedOut,     sub: `${utilisationPct}% utilisation`, colour: "text-status-amber" },
+    { label: "Issued",          value: data.checkedOut,     sub: `${utilisationPct}% utilisation`, colour: "text-brand-blue" },
     { label: "Damaged",         value: data.damaged,        sub: `${damageRatePct}% damage rate`,  colour: "text-status-red" },
     { label: "Under Repair",    value: data.underRepair,    sub: "in workshop",                   colour: "text-status-amber" },
     { label: "Repaired",        value: data.repaired,       sub: "awaiting return",               colour: "text-status-teal" },
@@ -575,14 +780,13 @@ function OverviewPanel({ data }: { data: OverviewData | undefined }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {stats.map((s) => (
-          <div key={s.label} className="bg-white rounded-card border border-grey-mid p-4">
-            <div className="text-caption text-grey uppercase tracking-wide">{s.label}</div>
-            <div className={`text-[28px] font-semibold mt-1 ${s.colour}`}>{s.value}</div>
-            <div className="text-[11px] text-grey mt-0.5">{s.sub}</div>
+          <div key={s.label} className="bg-white rounded-card border border-grey-mid px-3 py-2">
+            <div className="text-[10px] font-semibold text-grey uppercase tracking-wide">{s.label}</div>
+            <div className={`text-[20px] font-semibold leading-tight ${s.colour}`}>{s.value}</div>
+            <div className="text-[10px] text-grey">{s.sub}</div>
           </div>
         ))}
       </div>
-
     </div>
   );
 }

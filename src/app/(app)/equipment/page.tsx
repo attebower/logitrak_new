@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { ReportTable } from "@/components/shared/ReportTable";
 import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
 import { StatusPill, effectiveStatus } from "@/components/shared/StatusPill";
-import { locationChain } from "@/lib/format";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { CsvImportModal } from "@/components/shared/CsvImportModal";
@@ -28,7 +27,14 @@ import type { EquipmentDetail } from "@/components/shared/EquipmentDetailPanel";
 
 const EQUIPMENT_COLS: ColumnDef[] = [
   { key: "serial",   label: "Serial",   width: "w-28" },
-  { key: "name",     label: "Name",     width: "w-full" },
+  { key: "name",     label: "Name",     width: "w-64" },
+  { key: "description", label: "Description", width: "w-full", sortable: false,
+    render: (row) => {
+      const desc = row.description ? String(row.description) : "";
+      if (!desc) return <span className="text-[13px] text-grey">—</span>;
+      const truncated = desc.length > 60 ? `${desc.slice(0, 60)}…` : desc;
+      return <span className="text-[13px] text-grey" title={desc}>{truncated}</span>;
+    } },
   { key: "category", label: "Category", width: "w-40",
     render: (row) => <span className="text-[13px] text-grey">{String(row.category ?? "—")}</span> },
   { key: "status",   label: "Status",   width: "w-36",
@@ -83,6 +89,7 @@ export default function EquipmentPage() {
       id:           eq.id,
       serial:       eq.serial,
       name:         eq.name,
+      description:  eq.product?.description ?? "",
       category:     eq.category?.name ?? "Uncategorised",
       status:       eq.status,
       damageStatus: eq.damageStatus,
@@ -123,8 +130,15 @@ export default function EquipmentPage() {
     const latest = eq.checkEvents[0];
     const isCurrentlyIssued = eq.status === "checked_out" && latest?.eventType === "check_out";
     const currentLocation = isCurrentlyIssued && latest
-      ? locationChain([latest.studio?.name, latest.stage?.name, latest.set?.name, latest.positionType, latest.exactLocationDescription])
-      : undefined;
+      ? {
+          studio:     latest.studio?.name ?? null,
+          stage:      latest.stage?.name ?? null,
+          set:        latest.set?.name ?? null,
+          onLocation: (latest as { onLocation?: { name?: string } | null }).onLocation?.name ?? null,
+          position:   latest.positionType ?? null,
+          exact:      latest.exactLocationDescription ?? null,
+        }
+      : null;
     return {
       id:       eq.id,
       serial:   eq.serial,
@@ -138,13 +152,13 @@ export default function EquipmentPage() {
       checkHistory: eq.checkEvents.map((ce) => ({
         id:        ce.id,
         type:      ce.eventType === "check_in" ? "in" as const : "out" as const,
-        location:  locationChain([ce.studio?.name, ce.stage?.name, ce.set?.name, ce.positionType, ce.exactLocationDescription]),
         locationParts: {
-          studio:   ce.studio?.name ?? null,
-          stage:    ce.stage?.name ?? null,
-          set:      ce.set?.name ?? null,
-          position: ce.positionType ?? null,
-          exact:    ce.exactLocationDescription ?? null,
+          studio:     ce.studio?.name ?? null,
+          stage:      ce.stage?.name ?? null,
+          set:        ce.set?.name ?? null,
+          onLocation: (ce as { onLocation?: { name?: string } | null }).onLocation?.name ?? null,
+          position:   ce.positionType ?? null,
+          exact:      ce.exactLocationDescription ?? null,
         },
         checkedBy: ce.user?.displayName ?? ce.user?.email ?? "Unknown",
         timestamp: new Date(ce.createdAt).toISOString(),

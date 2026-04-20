@@ -24,10 +24,10 @@ const badgeVariants = cva(
         available: "bg-status-green-light text-status-green",
 
         /**
-         * Checked Out — amber
-         * bg: #FEF3C7 / text: #D97706
+         * Checked Out — brand blue (themed as "issued" throughout the app)
+         * bg: #EFF6FF / text: #1B4FD8
          */
-        "checked-out": "bg-status-amber-light text-status-amber",
+        "checked-out": "bg-brand-blue-light text-brand-blue",
 
         /**
          * Damaged — red

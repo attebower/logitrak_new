@@ -394,8 +394,21 @@ const setRouter = router({
     }),
 });
 
+const onLocationRouter = router({
+  list: workspaceProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .query(async ({ ctx }) => {
+      return ctx.prisma.onLocation.findMany({
+        where: { workspaceId: ctx.workspaceId! },
+        orderBy: [{ project: { name: "asc" } }, { name: "asc" }],
+        include: { project: { select: { id: true, name: true } } },
+      });
+    }),
+});
+
 export const locationRouter = router({
-  studio: studioRouter,
-  stage: stageRouter,
-  set: setRouter,
+  studio:     studioRouter,
+  stage:      stageRouter,
+  set:        setRouter,
+  onLocation: onLocationRouter,
 });

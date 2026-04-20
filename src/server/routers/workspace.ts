@@ -1,7 +1,16 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, workspaceProcedure } from "../trpc";
-import { IndustryType, WorkspaceRole } from "@prisma/client";
+import { IndustryType, SubscriptionTier, WorkspaceRole } from "@prisma/client";
+
+// Plan → limits (mirrors STRIPE_PLANS in lib/stripe.ts)
+const TIER_LIMITS: Record<SubscriptionTier, { maxUsers: number; maxAssets: number }> = {
+  starter:      { maxUsers: 5,       maxAssets: 500 },
+  professional: { maxUsers: 20,      maxAssets: 10_000 },
+  enterprise:   { maxUsers: 999_999, maxAssets: 999_999 },
+};
+
+const TRIAL_DAYS = 7;
 
 // UK Studios reference — seeded into every new workspace
 const UK_STUDIOS_SEED = [
@@ -73,9 +82,10 @@ export const workspaceRouter = router({
   create: protectedProcedure
     .input(
       z.object({
-        name: z.string().min(2),
-        industryType: z.nativeEnum(IndustryType),
-        department:   z.string().optional(),
+        name:             z.string().min(2),
+        industryType:     z.nativeEnum(IndustryType),
+        department:       z.string().optional(),
+        subscriptionTier: z.nativeEnum(SubscriptionTier).default("starter"),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -83,6 +93,9 @@ export const workspaceRouter = router({
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "");
+
+      const limits = TIER_LIMITS[input.subscriptionTier];
+      const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
 
       // BUG-015: wrap in try/catch and handle P2002 (unique constraint violation)
       // atomically — avoids the findUnique + create race condition
@@ -93,6 +106,11 @@ export const workspaceRouter = router({
             slug,
             industryType: input.industryType,
             department:   input.department?.toLowerCase(),
+            subscriptionTier:   input.subscriptionTier,
+            subscriptionStatus: "trialing",
+            trialEndsAt,
+            maxUsers:  limits.maxUsers,
+            maxAssets: limits.maxAssets,
             members: {
               create: {
                 userId: ctx.session.user.id,
@@ -150,10 +168,11 @@ export const workspaceRouter = router({
   update: workspaceProcedure
     .input(
       z.object({
-        workspaceId: z.string(),
-        name: z.string().min(2).optional(),
-        industryType: z.nativeEnum(IndustryType).optional(),
-        department:   z.string().nullable().optional(),
+        workspaceId:      z.string(),
+        name:             z.string().min(2).optional(),
+        industryType:     z.nativeEnum(IndustryType).optional(),
+        department:       z.string().nullable().optional(),
+        subscriptionTier: z.nativeEnum(SubscriptionTier).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -162,11 +181,16 @@ export const workspaceRouter = router({
       // Load current workspace first so we can skip no-op updates
       const current = await ctx.prisma.workspace.findUnique({
         where: { id: ctx.workspaceId! },
-        select: { name: true, slug: true, industryType: true, department: true },
+        select: { name: true, slug: true, industryType: true, department: true, subscriptionTier: true },
       });
       if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Workspace not found" });
 
-      const data: { name?: string; slug?: string; industryType?: IndustryType; department?: string | null } = {};
+      const data: {
+        name?: string; slug?: string;
+        industryType?: IndustryType; department?: string | null;
+        subscriptionTier?: SubscriptionTier;
+        maxUsers?: number; maxAssets?: number;
+      } = {};
       if (input.name !== undefined && input.name !== current.name) {
         data.name = input.name;
         const newSlug = input.name
@@ -181,6 +205,12 @@ export const workspaceRouter = router({
       if (input.department !== undefined) {
         data.department = input.department ? input.department.toLowerCase() : null;
       }
+      if (input.subscriptionTier !== undefined && input.subscriptionTier !== current.subscriptionTier) {
+        data.subscriptionTier = input.subscriptionTier;
+        const limits = TIER_LIMITS[input.subscriptionTier];
+        data.maxUsers  = limits.maxUsers;
+        data.maxAssets = limits.maxAssets;
+      }
 
       if (Object.keys(data).length === 0) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "No fields to update" });
@@ -190,7 +220,7 @@ export const workspaceRouter = router({
         return await ctx.prisma.workspace.update({
           where: { id: ctx.workspaceId! },
           data,
-          select: { id: true, name: true, slug: true, industryType: true, department: true },
+          select: { id: true, name: true, slug: true, industryType: true, department: true, subscriptionTier: true },
         });
       } catch (err: unknown) {
         if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "P2002") {

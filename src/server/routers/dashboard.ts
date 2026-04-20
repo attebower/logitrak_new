@@ -44,6 +44,49 @@ export const dashboardRouter = router({
       };
     }),
 
+  mostUsed: workspaceProcedure
+    .input(z.object({
+      workspaceId: z.string(),
+      window: z.enum(["30d", "all"]).default("30d"),
+      limit: z.number().min(1).max(20).default(5),
+    }))
+    .query(async ({ ctx, input }) => {
+      const wid = ctx.workspaceId!;
+      const since = input.window === "30d"
+        ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        : undefined;
+
+      const events = await ctx.prisma.checkEvent.findMany({
+        where: {
+          workspaceId: wid,
+          eventType: "check_out",
+          ...(since && { createdAt: { gte: since } }),
+        },
+        select: {
+          equipment: {
+            select: {
+              name: true,
+              product: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+
+      const counts = new Map<string, { key: string; name: string; count: number }>();
+      for (const ev of events) {
+        if (!ev.equipment) continue;
+        const name = ev.equipment.product?.name ?? ev.equipment.name;
+        const key  = ev.equipment.product?.id ?? `name:${ev.equipment.name}`;
+        const existing = counts.get(key);
+        if (existing) existing.count++;
+        else counts.set(key, { key, name, count: 1 });
+      }
+
+      return Array.from(counts.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, input.limit);
+    }),
+
   lowStock: workspaceProcedure
     .input(z.object({ workspaceId: z.string() }))
     .query(async ({ ctx }) => {
@@ -80,9 +123,11 @@ export const dashboardRouter = router({
         }
       }
 
-      // Filter to products with >=2 units where available/total <= 20%
+      // Low stock heuristic:
+      //   flag if 2 or fewer units are available, OR
+      //   fewer than 40% of total units are available.
       const lowStock = Array.from(productMap.entries())
-        .filter(([, v]) => v.total >= 2 && v.available / v.total <= 0.2)
+        .filter(([, v]) => v.available <= 2 || v.available / v.total < 0.4)
         .map(([id, v]) => ({
           productId: id,
           name: v.name,
@@ -90,7 +135,7 @@ export const dashboardRouter = router({
           available: v.available,
           percentAvailable: Math.round((v.available / v.total) * 100),
         }))
-        .sort((a, b) => a.percentAvailable - b.percentAvailable);
+        .sort((a, b) => a.available - b.available || a.percentAvailable - b.percentAvailable);
 
       return lowStock;
     }),

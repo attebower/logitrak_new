@@ -21,7 +21,7 @@ import { normaliseProductName } from "@/lib/normalise";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-type Step = "pick-product" | "add-units";
+type Step = "pick-product" | "add-units" | "confirm";
 
 interface SelectedProduct {
   id:          string | null; // null = new product being created
@@ -141,6 +141,23 @@ export default function EquipmentEntryPage() {
     setPendingUnits((prev) => prev.filter((u) => u.serial !== serial));
   }
 
+  function addBulkUnits(count: number) {
+    if (!Number.isFinite(count) || count < 1) return;
+    const clamped = Math.min(count, 100);
+    const nextFromDb = nextSerialData?.next ? parseInt(nextSerialData.next, 10) : 1;
+    const highestPending = pendingUnits.reduce((max, u) => Math.max(max, parseInt(u.serial, 10)), 0);
+    const start = Math.max(nextFromDb, highestPending + 1);
+    if (start + clamped - 1 > 99999) {
+      setSaveError("Serial pool exhausted — not enough 5-digit serials remaining.");
+      return;
+    }
+    const newOnes: PendingUnit[] = Array.from({ length: clamped }, (_, i) => ({
+      serial: String(start + i).padStart(5, "0"),
+    }));
+    setPendingUnits((prev) => [...prev, ...newOnes]);
+    setSerialInput(String(start + clamped).padStart(5, "0"));
+  }
+
   async function saveBatch() {
     if (!selected || pendingUnits.length === 0) return;
     setSaveError(null);
@@ -210,9 +227,38 @@ export default function EquipmentEntryPage() {
       <AppTopbar
         title="Equipment Entry"
         actions={
-          <Button variant="secondary" size="sm" onClick={() => router.push("/equipment")}>
-            ← Back to equipment
-          </Button>
+          step === "add-units" ? (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setStep("pick-product");
+                  setPendingUnits([]);
+                  setSerialInput("");
+                  setSaveError(null);
+                }}
+              >
+                ← Choose product
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => router.push("/equipment")}>
+                Close
+              </Button>
+            </>
+          ) : step === "confirm" ? (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setStep("add-units")}>
+                ← Back to units
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => router.push("/equipment")}>
+                Close
+              </Button>
+            </>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => router.push("/equipment")}>
+              ← Back to equipment
+            </Button>
+          )
         }
       />
 
@@ -221,7 +267,9 @@ export default function EquipmentEntryPage() {
         <div className="flex items-center gap-2 text-[12px]">
           <StepChip active={step === "pick-product"} done={step !== "pick-product"} label="1. Choose product" />
           <span className="text-grey">→</span>
-          <StepChip active={step === "add-units"} done={false} label="2. Add units" />
+          <StepChip active={step === "add-units"} done={step === "confirm"} label="2. Add units" />
+          <span className="text-grey">→</span>
+          <StepChip active={step === "confirm"} done={false} label="3. Confirm" />
         </div>
 
         {step === "pick-product" && (
@@ -245,6 +293,7 @@ export default function EquipmentEntryPage() {
             serialInput={serialInput}
             setSerialInput={setSerialInput}
             onAddUnit={addUnit}
+            onAddBulk={addBulkUnits}
             serialStatus={serialStatus}
             takenBy={takenBy}
             nextSerialHint={nextSerialData}
@@ -256,13 +305,22 @@ export default function EquipmentEntryPage() {
               setSerialInput("");
               setSaveError(null);
             }}
+            onContinue={() => setStep("confirm")}
+            serialRef={serialRef}
+          />
+        )}
+
+        {step === "confirm" && selected && (
+          <ConfirmStep
+            product={selected}
+            pendingUnits={pendingUnits}
+            onBack={() => setStep("add-units")}
             onSave={saveBatch}
             saving={createBatch.isPending || createProduct.isPending}
             saveError={saveError}
             successInfo={successInfo}
             onAddAnother={addAnotherProduct}
             onFinish={finish}
-            serialRef={serialRef}
           />
         )}
       </div>
@@ -287,6 +345,11 @@ function PickProductStep({
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [browseOpen, setBrowseOpen] = useState(false);
+
+  const hasSearch = search.trim().length > 0;
+  // Show results only when searching OR when user opens the Browse All dropdown.
+  const showResults = hasSearch || browseOpen;
 
   function startCreating() {
     setNewName(search);
@@ -311,17 +374,33 @@ function PickProductStep({
         <div className="px-5 py-3.5 border-b border-grey-mid">
           <h2 className="text-[13px] font-semibold text-surface-dark">Search catalog</h2>
         </div>
-        <div className="p-5 space-y-4">
-          <input
-            type="text"
-            autoFocus
-            placeholder="Start typing, e.g. Arri SkyPanel…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"
-          />
+        <div className="p-5 space-y-3">
+          <p className="text-[12px] text-grey">
+            Find an existing product in your workspace catalog, or browse all.
+          </p>
 
-          {products.length === 0 && search.trim() && (
+          <div className="relative">
+            <input
+              type="text"
+              autoFocus
+              placeholder="Start typing, e.g. Arri SkyPanel…"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setBrowseOpen(false); }}
+              className="w-full bg-grey-light border border-grey-mid rounded-btn px-3 py-2 pr-9 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"
+            />
+            {!hasSearch && (
+              <button
+                type="button"
+                onClick={() => setBrowseOpen((v) => !v)}
+                aria-label={browseOpen ? "Hide all products" : "Browse all products"}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-grey hover:text-brand-blue text-[11px] font-semibold px-1.5"
+              >
+                {browseOpen ? "▲" : "▼"}
+              </button>
+            )}
+          </div>
+
+          {showResults && products.length === 0 && hasSearch && (
             <div className="text-center py-6 text-[12px] text-grey space-y-3">
               <p>No products matching &ldquo;{search}&rdquo;.</p>
               <Button size="sm" variant="primary" onClick={startCreating}>
@@ -330,31 +409,29 @@ function PickProductStep({
             </div>
           )}
 
-          {!search.trim() && products.length === 0 && (
+          {showResults && products.length === 0 && !hasSearch && (
             <div className="text-center py-6 text-[12px] text-grey">
-              Search your workspace catalog — or create the first product on the right.
+              No products in the catalog yet — create your first on the right.
             </div>
           )}
 
-          {products.length > 0 && (
-            <div className="divide-y divide-grey-mid border border-grey-mid rounded-card overflow-hidden">
+          {showResults && products.length > 0 && (
+            <ul className="divide-y divide-grey-mid border border-grey-mid rounded-btn overflow-hidden max-h-[360px] overflow-y-auto">
               {products.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => onPick(p)}
-                  className="w-full px-4 py-3 text-left hover:bg-grey-light transition-colors"
-                >
-                  <div className="text-[13px] font-semibold text-surface-dark">{p.name}</div>
-                  <div className="text-[11px] text-grey mt-0.5">
-                    {p.category?.name ?? "Uncategorised"}
-                    {p.description ? ` · ${p.description.slice(0, 80)}${p.description.length > 80 ? "…" : ""}` : ""}
-                  </div>
-                </button>
+                <li key={p.id}>
+                  <button
+                    onClick={() => onPick(p)}
+                    className="w-full px-3 py-2 text-left hover:bg-grey-light transition-colors flex items-center gap-3"
+                  >
+                    <span className="text-[13px] text-surface-dark flex-1 truncate">{p.name}</span>
+                    <span className="text-[11px] text-grey whitespace-nowrap">{p.category?.name ?? "—"}</span>
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
 
-          {!exactMatch && products.length > 0 && search.trim() && (
+          {showResults && !exactMatch && products.length > 0 && hasSearch && (
             <button
               onClick={startCreating}
               className="w-full text-[12px] text-brand-blue hover:underline text-left"
@@ -441,28 +518,25 @@ function PickProductStep({
 // ── Step 2 — Add Units ────────────────────────────────────────────────────
 
 function AddUnitsStep({
-  product, serialInput, setSerialInput, onAddUnit, serialStatus, takenBy,
-  nextSerialHint, pendingUnits, onRemoveUnit, onBack, onSave, saving, saveError,
-  successInfo, onAddAnother, onFinish, serialRef,
+  product, serialInput, setSerialInput, onAddUnit, onAddBulk, serialStatus, takenBy,
+  nextSerialHint, pendingUnits, onRemoveUnit, onBack, onContinue, serialRef,
 }: {
   product: SelectedProduct;
   serialInput: string;
   setSerialInput: (s: string) => void;
   onAddUnit: () => void;
+  onAddBulk: (count: number) => void;
   serialStatus: "idle" | "checking" | "available" | "taken" | "duplicate";
   takenBy: string | null;
   nextSerialHint: { last: string | null; next: string } | undefined;
   pendingUnits: PendingUnit[];
   onRemoveUnit: (serial: string) => void;
   onBack: () => void;
-  onSave: () => void;
-  saving: boolean;
-  saveError: string | null;
-  successInfo: { count: number; name: string } | null;
-  onAddAnother: () => void;
-  onFinish: () => void;
+  onContinue: () => void;
   serialRef: React.RefObject<HTMLInputElement>;
 }) {
+  const [bulkCount, setBulkCount] = useState(5);
+
   function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && serialStatus === "available") {
       e.preventDefault();
@@ -474,7 +548,7 @@ function AddUnitsStep({
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
       {/* LEFT: Scan & pending units */}
       <div className="space-y-4">
-        <div className="bg-white rounded-card border border-grey-mid border-l-4 border-l-brand-blue overflow-hidden">
+        <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
           <div className="px-5 py-3.5 border-b border-grey-mid">
             <h2 className="text-[13px] font-semibold text-surface-dark">Scan or enter serial</h2>
           </div>
@@ -513,17 +587,39 @@ function AddUnitsStep({
           </div>
         </div>
 
-        {successInfo && (
-          <div className="bg-status-green/5 border border-status-green/30 rounded-card px-4 py-3 text-[12px] text-surface-dark">
-            ✅ Created {successInfo.count} unit{successInfo.count !== 1 ? "s" : ""} of <strong>{successInfo.name}</strong>.
+        {/* Bulk add — skip scanning when you're registering a big batch of identical units */}
+        <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-grey-mid">
+            <h2 className="text-[13px] font-semibold text-surface-dark">Or add in bulk</h2>
           </div>
-        )}
+          <div className="p-5 space-y-3">
+            <p className="text-[11px] text-grey">
+              Assigns the next {bulkCount} sequential serial{bulkCount !== 1 ? "s" : ""} starting from <span className="font-semibold text-surface-dark">{nextSerialHint?.next ?? "—"}</span>. Max 100 at a time.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={bulkCount}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  setBulkCount(Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 1);
+                }}
+                className="w-20 bg-grey-light border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark focus:outline-none focus:border-brand-blue"
+              />
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => onAddBulk(bulkCount)}
+                className="flex-1"
+              >
+                Add {bulkCount} unit{bulkCount !== 1 ? "s" : ""}
+              </Button>
+            </div>
+          </div>
+        </div>
 
-        {saveError && (
-          <div className="bg-status-red-light border border-status-red/20 rounded-card px-4 py-3 text-[12px] text-status-red">
-            {saveError}
-          </div>
-        )}
       </div>
 
       {/* RIGHT: Summary of what's being added */}
@@ -566,7 +662,7 @@ function AddUnitsStep({
                   Scan serials to add units
                 </p>
               ) : (
-                <div className="space-y-1 max-h-[260px] overflow-y-auto">
+                <div className="space-y-1 max-h-[160px] overflow-y-auto">
                   {pendingUnits.map((u) => (
                     <div key={u.serial} className="flex items-center gap-2 px-2 py-1.5 rounded-btn hover:bg-grey-light">
                       <span className="text-[13px] text-surface-dark flex-1">{u.serial}</span>
@@ -587,37 +683,147 @@ function AddUnitsStep({
 
         {/* Actions */}
         <div className="bg-white rounded-card border border-grey-mid p-4 flex items-center justify-between gap-3">
-          {!successInfo ? (
-            <>
-              <p className="text-[12px] text-grey flex-1">
-                {pendingUnits.length === 0
-                  ? "Scan at least one serial to save."
-                  : `Ready to save ${pendingUnits.length} unit${pendingUnits.length !== 1 ? "s" : ""} of ${product.name}.`}
-              </p>
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={pendingUnits.length === 0 || saving}
-                onClick={onSave}
-              >
-                {saving ? "Saving…" : `Save ${pendingUnits.length || ""} →`}
-              </Button>
-            </>
-          ) : (
-            <>
-              <p className="text-[12px] text-grey flex-1">What next?</p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={onAddAnother}>
-                  + Another product
-                </Button>
-                <Button size="sm" variant="primary" onClick={onFinish}>
-                  Done
-                </Button>
-              </div>
-            </>
-          )}
+          <p className="text-[12px] text-grey flex-1">
+            {pendingUnits.length === 0
+              ? "Scan at least one serial to continue."
+              : `${pendingUnits.length} unit${pendingUnits.length !== 1 ? "s" : ""} ready to review.`}
+          </p>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={pendingUnits.length === 0}
+            onClick={onContinue}
+          >
+            Continue →
+          </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Step 3 — Confirm ───────────────────────────────────────────────────────
+
+function ConfirmStep({
+  product, pendingUnits, onBack, onSave, saving, saveError,
+  successInfo, onAddAnother, onFinish,
+}: {
+  product: SelectedProduct;
+  pendingUnits: PendingUnit[];
+  onBack: () => void;
+  onSave: () => void;
+  saving: boolean;
+  saveError: string | null;
+  successInfo: { count: number; name: string } | null;
+  onAddAnother: () => void;
+  onFinish: () => void;
+}) {
+  if (successInfo) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-card border border-grey-mid p-8 flex flex-col items-center text-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-status-green flex items-center justify-center">
+            <svg viewBox="0 0 24 24" className="w-8 h-8 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+          <div>
+            <div className="text-[18px] font-bold text-surface-dark">Equipment added</div>
+            <div className="text-[13px] text-grey mt-1">
+              Created {successInfo.count} unit{successInfo.count !== 1 ? "s" : ""} of <strong className="text-surface-dark">{successInfo.name}</strong>.
+            </div>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Button size="sm" variant="secondary" onClick={onAddAnother}>
+              + Another product
+            </Button>
+            <Button size="sm" variant="primary" onClick={onFinish}>
+              Done
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const categoryLabel = product.name; // product name shown as primary; category handled below if you want it
+  void categoryLabel;
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-4">
+      {/* Summary card */}
+      <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-grey-mid">
+          <h2 className="text-[13px] font-semibold text-surface-dark">Review & confirm</h2>
+        </div>
+        <dl className="divide-y divide-grey-mid">
+          <ConfirmRow label="Product" value={product.name} />
+          {product.description && <ConfirmRow label="Description" value={product.description} wrap />}
+          <ConfirmRow
+            label="Total units"
+            value={`${pendingUnits.length} unit${pendingUnits.length !== 1 ? "s" : ""}`}
+          />
+          {product.id === null && (
+            <ConfirmRow
+              label="Catalog"
+              value="New product — will be added on confirm"
+            />
+          )}
+        </dl>
+      </div>
+
+      {/* Serials list */}
+      <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-grey-mid flex items-center justify-between">
+          <h3 className="text-[13px] font-semibold text-surface-dark">
+            Serials <span className="text-grey font-normal">({pendingUnits.length})</span>
+          </h3>
+          {pendingUnits.length > 0 && (
+            <span className="text-[11px] text-grey">
+              {pendingUnits[0].serial} – {pendingUnits[pendingUnits.length - 1].serial}
+            </span>
+          )}
+        </div>
+        <div className="p-3 max-h-[220px] overflow-y-auto">
+          <div className="grid grid-cols-5 gap-1.5">
+            {pendingUnits.map((u) => (
+              <span
+                key={u.serial}
+                className="px-2 py-1 rounded-btn bg-grey-light text-[12px] font-mono text-surface-dark text-center"
+              >
+                {u.serial}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {saveError && (
+        <div className="bg-status-red-light border border-status-red/20 rounded-card px-4 py-3 text-[12px] text-status-red">
+          {saveError}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center justify-between gap-3">
+        <Button size="sm" variant="secondary" onClick={onBack} disabled={saving}>
+          ← Back
+        </Button>
+        <Button size="sm" variant="primary" onClick={onSave} disabled={saving || pendingUnits.length === 0}>
+          {saving ? "Saving…" : `Confirm & create ${pendingUnits.length} unit${pendingUnits.length !== 1 ? "s" : ""}`}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmRow({ label, value, wrap }: { label: string; value: string; wrap?: boolean }) {
+  return (
+    <div className="px-5 py-3 flex items-start gap-4">
+      <dt className="text-[11px] font-semibold text-grey uppercase tracking-wide w-28 shrink-0 mt-0.5">{label}</dt>
+      <dd className={`text-[13px] text-surface-dark flex-1 min-w-0 ${wrap ? "whitespace-pre-wrap break-words" : ""}`}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -651,13 +857,14 @@ function SerialStatusLine({
 }
 
 function StepChip({ active, done, label }: { active: boolean; done: boolean; label: string }) {
+  const reached = active || done;
   return (
     <span
       className={[
         "px-3 py-1 rounded-md border text-[12px] font-semibold",
-        active ? "bg-brand-blue/10 text-brand-blue border-brand-blue/30"
-               : done ? "bg-status-green/10 text-status-green border-status-green/30"
-                      : "bg-grey-light text-grey border-grey-mid",
+        reached
+          ? "bg-brand-blue-light text-brand-blue border-brand-blue/30"
+          : "bg-grey-light text-grey border-grey-mid",
       ].join(" ")}
     >
       {label}

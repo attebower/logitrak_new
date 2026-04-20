@@ -46,6 +46,9 @@ export interface ReportTableProps<T extends Record<string, unknown>> {
   title:        string;
   onExport?:    () => void;
   exportLabel?: string;
+  /** Optional: PDF export handler, rendered as a secondary button next to CSV */
+  onExportPdf?: () => void;
+  pdfLabel?:    string;
   emptyMessage?: string;
   className?:   string;
   /** Optional: called when a row is clicked */
@@ -58,6 +61,8 @@ export function ReportTable<T extends Record<string, unknown>>({
   title,
   onExport,
   exportLabel = "Export CSV",
+  onExportPdf,
+  pdfLabel = "Export PDF",
   emptyMessage = "No data to display",
   className,
   onRowClick,
@@ -96,8 +101,23 @@ export function ReportTable<T extends Record<string, unknown>>({
             {rows.length} {rows.length === 1 ? "result" : "results"}
           </span>
           {onExport && (
-            <Button variant="secondary" size="sm" onClick={onExport}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onExport}
+              className="bg-brand-blue-light text-brand-blue hover:bg-brand-blue-mid"
+            >
               ↓ {exportLabel}
+            </Button>
+          )}
+          {onExportPdf && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onExportPdf}
+              className="bg-brand-blue-light text-brand-blue hover:bg-brand-blue-mid"
+            >
+              ↓ {pdfLabel}
             </Button>
           )}
         </div>

@@ -13,21 +13,24 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { StatusPill, type StatusPillValue } from "@/components/shared/StatusPill";
-import { formatDateTime, formatDate, durationFromNow, durationBetween, locationChain, prettyPosition } from "@/lib/format";
+import { formatDateTime, formatDate, durationFromNow, durationBetween, prettyPosition } from "@/lib/format";
 
 // ── Data shapes ───────────────────────────────────────────────────────────
+
+export interface LocationParts {
+  studio?:     string | null;
+  stage?:      string | null;
+  set?:        string | null;
+  onLocation?: string | null;
+  position?:   string | null;
+  exact?:      string | null;
+}
 
 export interface CheckEvent {
   id:          string;
   type:        "out" | "in";
   location?:   string;
-  locationParts?: {
-    studio?:   string | null;
-    stage?:    string | null;
-    set?:      string | null;
-    position?: string | null;
-    exact?:    string | null;
-  };
+  locationParts?: LocationParts;
   checkedBy:   string;
   timestamp:   string;
 }
@@ -49,7 +52,8 @@ export interface EquipmentDetail {
   type:          string;
   category:      string;
   status:        StatusPillValue;
-  location?:     string;
+  /** Structured current location (when issued). If absent, shown as "In stock". */
+  location?:     LocationParts | null;
   notes?:        string;
   addedAt:       string;
   /** When the item was last checked out (only present if currently issued) */
@@ -122,11 +126,12 @@ export function EquipmentDetailPanel({
             {/* ── Body ── */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
+              <LocationCard
+                location={equipment.location ?? null}
+                issuedFor={equipment.issuedAt ? durationFromNow(equipment.issuedAt) : null}
+              />
+
               <InfoCard>
-                <InfoRow label="Current location" value={equipment.location ?? "In stock"} />
-                {equipment.issuedAt && (
-                  <InfoRow label="Issued for" value={durationFromNow(equipment.issuedAt)} />
-                )}
                 <InfoRow label="Category" value={equipment.category} />
                 <InfoRow label="Added" value={formatDate(equipment.addedAt)} />
                 {equipment.notes && <InfoRow label="Notes" value={equipment.notes} wrap />}
@@ -243,15 +248,12 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 function CheckEventRow({ event, durationSincePrev }: { event: CheckEvent; durationSincePrev?: string }) {
   const isOut = event.type === "out";
-  const location = event.locationParts
-    ? locationChain([
-        event.locationParts.studio,
-        event.locationParts.stage,
-        event.locationParts.set,
-        event.locationParts.position,
-        event.locationParts.exact,
-      ]) || event.location
-    : event.location;
+  const parts = event.locationParts;
+  const venue = parts?.onLocation
+    ? parts.onLocation
+    : [parts?.studio, parts?.stage, parts?.set].filter(Boolean).join(" → ");
+  const position = parts?.position ? prettyPosition(parts.position) : null;
+
   return (
     <div className="flex items-start gap-3 px-4 py-3">
       <div
@@ -266,13 +268,77 @@ function CheckEventRow({ event, durationSincePrev }: { event: CheckEvent; durati
           <span className="text-[12px] font-semibold text-surface-dark">
             {isOut ? "Issued" : "Returned"}
           </span>
-          {location && <span className="text-[12px] text-grey">to {location}</span>}
+          {venue && <span className="text-[12px] text-grey">to {venue}</span>}
         </div>
+        {(position || parts?.exact) && (
+          <p className="text-[11px] text-grey mt-0.5">
+            {position && <span>{position}</span>}
+            {position && parts?.exact && <span> · </span>}
+            {parts?.exact && <span className="whitespace-pre-wrap">{parts.exact}</span>}
+          </p>
+        )}
         <p className="text-[11px] text-grey mt-0.5">
           {event.checkedBy} · {formatDateTime(event.timestamp)}
           {durationSincePrev && <> · {isOut ? "held for" : "was out for"} {durationSincePrev}</>}
         </p>
       </div>
+    </div>
+  );
+}
+
+// ── Location card (dedicated, roomy, wraps long descriptions) ────────────
+
+function LocationCard({
+  location,
+  issuedFor,
+}: {
+  location: LocationParts | null;
+  issuedFor: string | null;
+}) {
+  const isInStock = !location || (
+    !location.studio && !location.stage && !location.set &&
+    !location.onLocation && !location.position && !location.exact
+  );
+
+  if (isInStock) {
+    return (
+      <InfoCard>
+        <InfoRow label="Location" value="In stock" />
+      </InfoCard>
+    );
+  }
+
+  const loc = location!;
+  const position = loc.position ? prettyPosition(loc.position) : null;
+
+  return (
+    <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+      <div className="px-4 py-1.5 border-b border-grey-mid flex items-center justify-between bg-grey-light/50">
+        <h3 className="text-[10px] font-semibold text-grey uppercase tracking-wider">Current Location</h3>
+        {issuedFor && <span className="text-[10px] text-grey">issued {issuedFor} ago</span>}
+      </div>
+      <dl className="divide-y divide-grey-mid">
+        {loc.onLocation ? (
+          <LocRow label="On Location" value={loc.onLocation} />
+        ) : (
+          <>
+            {loc.studio && <LocRow label="Studio" value={loc.studio} />}
+            {loc.stage  && <LocRow label="Stage"  value={loc.stage}  />}
+            {loc.set    && <LocRow label="Set"    value={loc.set}    />}
+          </>
+        )}
+        {position     && <LocRow label="Position" value={position}   />}
+        {loc.exact    && <LocRow label="Details"  value={loc.exact} wrap />}
+      </dl>
+    </div>
+  );
+}
+
+function LocRow({ label, value, wrap }: { label: string; value: string; wrap?: boolean }) {
+  return (
+    <div className="px-4 py-2.5 flex items-start gap-4">
+      <dt className="text-[11px] font-semibold text-grey uppercase tracking-wide w-32 shrink-0 mt-0.5">{label}</dt>
+      <dd className={cn("text-[13px] text-surface-dark flex-1 min-w-0", wrap ? "whitespace-pre-wrap break-words" : "")}>{value}</dd>
     </div>
   );
 }

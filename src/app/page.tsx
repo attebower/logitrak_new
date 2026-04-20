@@ -448,7 +448,7 @@ export default function HomePage() {
 
           {/* Trust line */}
           <p className="mb-16 text-[13px] text-white/25">
-            14-day free trial · No credit card required · Set up in under 10
+            7-day free trial · No credit card required · Set up in under 10
             minutes
           </p>
 
@@ -669,7 +669,7 @@ export default function HomePage() {
             </span>
           </h2>
           <p className="mb-10 text-[17px] text-white/40">
-            14 days free on the Professional plan. No credit card required.
+            7 days free on the Professional plan. No credit card required.
           </p>
           <Link
             href="/sign-up"

@@ -76,9 +76,27 @@ const config: Config = {
           "50%":  { top: "85%" },
           "100%": { top: "10%" },
         },
+        throb: {
+          "0%, 100%": { opacity: "1" },
+          "50%":      { opacity: "0.35" },
+        },
+        cutaway: {
+          "0%":   { opacity: "0", transform: "scale(0.92)" },
+          "15%":  { opacity: "1", transform: "scale(1)" },
+          "80%":  { opacity: "1", transform: "scale(1)" },
+          "100%": { opacity: "0", transform: "scale(1.02)" },
+        },
+        "check-pop": {
+          "0%":   { opacity: "0", transform: "scale(0.4) rotate(-10deg)" },
+          "60%":  { opacity: "1", transform: "scale(1.15) rotate(0deg)" },
+          "100%": { opacity: "1", transform: "scale(1)   rotate(0deg)" },
+        },
       },
       animation: {
         "scan-line": "scan-line 2s ease-in-out infinite",
+        "throb":     "throb 2s ease-in-out infinite",
+        "cutaway":   "cutaway 1500ms ease-in-out forwards",
+        "check-pop": "check-pop 500ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
       },
     },
   },

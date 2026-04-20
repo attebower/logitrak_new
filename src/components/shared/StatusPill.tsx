@@ -20,13 +20,13 @@ export type StatusPillValue =
   | "repaired"
   | "retired";
 
-const STATUS_META: Record<StatusPillValue, { label: string; colour: string; text: string }> = {
-  available:    { label: "Available",    colour: "bg-status-green", text: "text-status-green" },
-  issued:       { label: "Issued",       colour: "bg-status-amber", text: "text-status-amber" },
-  damaged:      { label: "Damaged",      colour: "bg-status-red",   text: "text-status-red" },
-  under_repair: { label: "Under Repair", colour: "bg-status-amber", text: "text-status-amber" },
-  repaired:     { label: "Repaired",     colour: "bg-status-teal",  text: "text-status-teal" },
-  retired:      { label: "Retired",      colour: "bg-grey",         text: "text-grey" },
+const STATUS_META: Record<StatusPillValue, { label: string; chip: string }> = {
+  available:    { label: "Available",    chip: "bg-status-green-light text-status-green" },
+  issued:       { label: "Issued",       chip: "bg-brand-blue-light  text-brand-blue"   },
+  damaged:      { label: "Damaged",      chip: "bg-status-red-light  text-status-red"   },
+  under_repair: { label: "Under Repair", chip: "bg-status-amber-light text-status-amber" },
+  repaired:     { label: "Repaired",     chip: "bg-status-teal-light text-status-teal"  },
+  retired:      { label: "Retired",      chip: "bg-grey-mid          text-surface-dark" },
 };
 
 export function StatusPill({
@@ -43,8 +43,8 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md bg-grey-light border border-grey-mid font-semibold whitespace-nowrap",
-        meta.text,
+        "inline-flex items-center rounded-md font-semibold whitespace-nowrap",
+        meta.chip,
         pad,
         className
       )}
