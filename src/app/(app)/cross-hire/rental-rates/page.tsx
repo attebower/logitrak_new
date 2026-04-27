@@ -25,10 +25,10 @@ function formatDate(d: string | Date | null | undefined): string {
 }
 
 interface EditState {
-  productId:  string;
-  name:       string;
-  dailyRate:  string;
-  weeklyRate: string;
+  productId:     string;
+  name:          string;
+  dailyRate:     string;
+  weeklyDiscount: string;
 }
 
 export default function RentalRatesPage() {
@@ -65,12 +65,12 @@ export default function RentalRatesPage() {
     { enabled: !!historyProductId },
   );
 
-  function startEdit(row: { id: string; name: string; defaultDailyHireRate: string | null; defaultWeeklyHireRate: string | null }) {
+  function startEdit(row: { id: string; name: string; defaultDailyHireRate: string | null; defaultWeeklyDiscountPercentage: string | null }) {
     setEditing({
-      productId:  row.id,
-      name:       row.name,
-      dailyRate:  row.defaultDailyHireRate  ?? "",
-      weeklyRate: row.defaultWeeklyHireRate ?? "",
+      productId:      row.id,
+      name:           row.name,
+      dailyRate:      row.defaultDailyHireRate ?? "",
+      weeklyDiscount: row.defaultWeeklyDiscountPercentage ?? "",
     });
     setError(null);
   }
@@ -81,15 +81,20 @@ export default function RentalRatesPage() {
       setError("Daily rate is required (e.g. 50 or 50.00).");
       return;
     }
-    if (editing.weeklyRate && !/^\d+(\.\d{1,2})?$/.test(editing.weeklyRate)) {
-      setError("Invalid weekly rate.");
+    if (editing.weeklyDiscount && !/^\d+(\.\d{1,2})?$/.test(editing.weeklyDiscount)) {
+      setError("Invalid weekly discount (0-100%).");
+      return;
+    }
+    const discount = editing.weeklyDiscount ? parseFloat(editing.weeklyDiscount) : null;
+    if (discount !== null && (discount < 0 || discount > 100)) {
+      setError("Weekly discount must be between 0 and 100.");
       return;
     }
     setRates.mutate({
       workspaceId,
-      productId:  editing.productId,
-      dailyRate:  editing.dailyRate,
-      weeklyRate: editing.weeklyRate || null,
+      productId:      editing.productId,
+      dailyRate:      editing.dailyRate,
+      weeklyDiscount: discount,
     });
   }
 
@@ -133,7 +138,7 @@ export default function RentalRatesPage() {
                     <th className="text-left  px-4 py-3 font-semibold text-surface-dark">Product</th>
                     <th className="text-left  px-4 py-3 font-semibold text-surface-dark">Category</th>
                     <th className="text-right px-4 py-3 font-semibold text-surface-dark">Daily Rate</th>
-                    <th className="text-right px-4 py-3 font-semibold text-surface-dark">Weekly Rate</th>
+                    <th className="text-right px-4 py-3 font-semibold text-surface-dark">Weekly Discount</th>
                     <th className="text-right px-4 py-3 font-semibold text-surface-dark">Items</th>
                     <th className="text-right px-4 py-3 font-semibold text-surface-dark">Actions</th>
                   </tr>
@@ -144,7 +149,7 @@ export default function RentalRatesPage() {
                       <td className="px-4 py-3 font-medium text-surface-dark">{row.name}</td>
                       <td className="px-4 py-3 text-grey">{row.categoryName ?? "—"}</td>
                       <td className="px-4 py-3 text-right text-surface-dark">{formatRate(row.defaultDailyHireRate)}</td>
-                      <td className="px-4 py-3 text-right text-surface-dark">{formatRate(row.defaultWeeklyHireRate)}</td>
+                      <td className="px-4 py-3 text-right text-surface-dark">{row.defaultWeeklyDiscountPercentage ? `${Number(row.defaultWeeklyDiscountPercentage).toFixed(1)}%` : "—"}</td>
                       <td className="px-4 py-3 text-right text-grey">{row.equipmentCount}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
@@ -198,9 +203,9 @@ export default function RentalRatesPage() {
                   className={inputCls} autoFocus />
               </div>
               <div>
-                <label className="block text-[11px] font-medium text-grey mb-1">Weekly Rate (£)</label>
-                <input type="number" min="0" step="0.01" value={editing.weeklyRate}
-                  onChange={(e) => setEditing((s) => s ? { ...s, weeklyRate: e.target.value } : s)}
+                <label className="block text-[11px] font-medium text-grey mb-1">Weekly Discount (%)</label>
+                <input type="number" min="0" max="100" step="0.01" value={editing.weeklyDiscount}
+                  onChange={(e) => setEditing((s) => s ? { ...s, weeklyDiscount: e.target.value } : s)}
                   className={inputCls} />
               </div>
             </div>
@@ -238,7 +243,7 @@ export default function RentalRatesPage() {
                     <tr className="border-b border-grey-mid bg-grey-light/50">
                       <th className="text-left  px-3 py-2 font-semibold text-surface-dark">Recorded</th>
                       <th className="text-right px-3 py-2 font-semibold text-surface-dark">Daily</th>
-                      <th className="text-right px-3 py-2 font-semibold text-surface-dark">Weekly</th>
+                      <th className="text-right px-3 py-2 font-semibold text-surface-dark">Weekly Discount</th>
                       <th className="text-left  px-3 py-2 font-semibold text-surface-dark">Source</th>
                     </tr>
                   </thead>
@@ -247,7 +252,7 @@ export default function RentalRatesPage() {
                       <tr key={row.id}>
                         <td className="px-3 py-2 text-grey">{formatDate(row.recordedAt)}</td>
                         <td className="px-3 py-2 text-right text-surface-dark">£{Number(row.dailyRate).toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right text-surface-dark">{row.weeklyRate ? `£${Number(row.weeklyRate).toFixed(2)}` : "—"}</td>
+                        <td className="px-3 py-2 text-right text-surface-dark">{row.weeklyDiscount ? `${Number(row.weeklyDiscount).toFixed(1)}%` : "—"}</td>
                         <td className="px-3 py-2 text-grey">
                           {row.source === "cross_hire" ? "Cross hire" : "Manual"}
                         </td>

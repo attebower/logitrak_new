@@ -55,7 +55,11 @@ export function CrossHireDetailPanel({
   const cancelMut = trpc.crossHire["crossHire.cancel"].useMutation({
     onSuccess: () => {
       setConfirmCancel(false);
+      // Event has been deleted — drop it from caches and close the drawer.
+      void utils.equipment.list.invalidate();
+      void utils.dashboard.stats.invalidate();
       invalidate();
+      onClose();
     },
   });
 
@@ -360,39 +364,19 @@ export function CrossHireDetailPanel({
 
             {/* Footer */}
             <div className="bg-white px-4 py-3 border-t border-grey-mid flex items-center gap-2 flex-wrap">
-              {event.status === "active" && !confirmCancel && (
+              {event.status === "active" && (
                 <Button
+                  variant="destructive"
                   size="sm"
-                  className="bg-status-red hover:bg-red-700 text-white"
                   onClick={() => setConfirmCancel(true)}
                 >
                   <XCircle className="h-3.5 w-3.5 mr-1.5" />
                   Cancel Hire
                 </Button>
               )}
-              {event.status === "active" && confirmCancel && (
-                <div className="inline-flex items-center gap-2">
-                  <span className="text-[12px] font-medium text-surface-dark">Sure?</span>
-                  <Button
-                    size="sm"
-                    className="bg-status-red hover:bg-red-700 text-white"
-                    disabled={cancelMut.isPending}
-                    onClick={() => cancelMut.mutate({ workspaceId, eventId: event.id })}
-                  >
-                    {cancelMut.isPending ? "…" : "Yes"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setConfirmCancel(false)}
-                  >
-                    No
-                  </Button>
-                </div>
-              )}
               <div className="ml-auto">
                 <Link href={`/cross-hire/${event.id}`}>
-                  <Button size="sm" className="bg-brand-blue hover:bg-blue-700 text-white">
+                  <Button variant="primary" size="sm">
                     <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                     Open page
                   </Button>
@@ -401,6 +385,60 @@ export function CrossHireDetailPanel({
             </div>
           </>
         )}
+      </div>
+
+      {/* Confirm cancel modal */}
+      {confirmCancel && event && event.status === "active" && (
+        <ConfirmDeleteCrossHireModal
+          productionName={event.hireCustomer.productionName}
+          itemCount={event.equipmentItems.filter((i) => !i.returnedAt).length}
+          isPending={cancelMut.isPending}
+          onConfirm={() => cancelMut.mutate({ workspaceId, eventId: event.id })}
+          onClose={() => { if (!cancelMut.isPending) setConfirmCancel(false); }}
+        />
+      )}
+    </>
+  );
+}
+
+function ConfirmDeleteCrossHireModal({
+  productionName, itemCount, isPending, onConfirm, onClose,
+}: {
+  productionName: string;
+  itemCount: number;
+  isPending: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-[60]" onClick={onClose} aria-hidden />
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+        <div className="bg-white rounded-card shadow-device max-w-md w-full overflow-hidden">
+          <div className="px-6 pt-6 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5 text-status-red" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold text-surface-dark">Cancel this cross hire?</h2>
+                <p className="text-[12px] text-grey mt-0.5 truncate">{productionName}</p>
+              </div>
+            </div>
+            <div className="mt-4 text-[13px] text-surface-dark space-y-2">
+              <p>This will <span className="font-semibold">permanently delete</span> this cross hire order. It cannot be undone.</p>
+              {itemCount > 0 && (
+                <p><span className="font-semibold">{itemCount}</span> item{itemCount === 1 ? "" : "s"} currently on hire will be returned to stock.</p>
+              )}
+            </div>
+          </div>
+          <div className="px-6 py-3 bg-grey-light/40 border-t border-grey-mid flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" disabled={isPending} onClick={onClose}>Keep hire</Button>
+            <Button variant="destructive" size="sm" disabled={isPending} onClick={onConfirm}>
+              {isPending ? "Deleting…" : "Yes, delete"}
+            </Button>
+          </div>
+        </div>
       </div>
     </>
   );

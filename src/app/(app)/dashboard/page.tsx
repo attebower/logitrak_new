@@ -97,12 +97,6 @@ export default function DashboardPage() {
             icon={<CheckCircle2 className="h-5 w-5" />}
             label="Available"
             value={statsLoading ? "—" : (stats?.available ?? 0)}
-            change={
-              stats && stats.totalEquipment > 0
-                ? `${((stats.available / stats.totalEquipment) * 100).toFixed(1)}% of total`
-                : undefined
-            }
-            changeColor="grey"
           />
           <StatCard
             color="blue"

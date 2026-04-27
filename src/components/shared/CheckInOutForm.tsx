@@ -104,6 +104,9 @@ export function CheckInOutForm({ mode }: { mode: CheckInOutMode }) {
 
   const checkOut = trpc.checkEvent.checkOut.useMutation({
     onSuccess: (_data, variables) => {
+      void utils.equipment.list.invalidate();
+      void utils.dashboard.stats.invalidate();
+      void utils.activity.list.invalidate();
       setLastOutCount(variables.equipmentIds.length);
       setJustIssued(true);
       setTimeout(() => {
@@ -121,6 +124,13 @@ export function CheckInOutForm({ mode }: { mode: CheckInOutMode }) {
 
   const checkIn = trpc.checkEvent.checkIn.useMutation({
     onSuccess: (_data, variables) => {
+      // Cross-hired items get auto-reconciled server-side, so refresh the
+      // cross-hire list/drawer along with equipment + dashboard stats.
+      void utils.equipment.list.invalidate();
+      void utils.dashboard.stats.invalidate();
+      void utils.activity.list.invalidate();
+      void utils.crossHire["crossHire.list"].invalidate();
+      void utils.crossHire["crossHire.getById"].invalidate();
       setLastInCount(variables.equipmentIds.length);
       setJustReturned(true);
       setTimeout(() => {

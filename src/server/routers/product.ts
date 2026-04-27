@@ -122,13 +122,13 @@ export const productRouter = router({
       });
 
       return products.map((p) => ({
-        id:                    p.id,
-        name:                  p.name,
-        categoryName:          p.category?.name ?? null,
-        defaultDailyHireRate:  p.defaultDailyHireRate ? p.defaultDailyHireRate.toString() : null,
-        defaultWeeklyHireRate: p.defaultWeeklyHireRate ? p.defaultWeeklyHireRate.toString() : null,
-        equipmentCount:        p._count.equipment,
-        rateHistoryCount:      p._count.rateHistory,
+        id:                              p.id,
+        name:                            p.name,
+        categoryName:                    p.category?.name ?? null,
+        defaultDailyHireRate:            p.defaultDailyHireRate ? p.defaultDailyHireRate.toString() : null,
+        defaultWeeklyDiscountPercentage: p.defaultWeeklyHireRate ? p.defaultWeeklyHireRate.toString() : null,
+        equipmentCount:                  p._count.equipment,
+        rateHistoryCount:                p._count.rateHistory,
       }));
     }),
 
@@ -142,20 +142,25 @@ export const productRouter = router({
       });
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
 
-      return ctx.prisma.equipmentProductRateHistory.findMany({
+      const history = await ctx.prisma.equipmentProductRateHistory.findMany({
         where:   { productId: input.productId },
         orderBy: { recordedAt: "desc" },
         take:    100,
       });
+
+      return history.map((h) => ({
+        ...h,
+        weeklyDiscount: h.weeklyRate,
+      }));
     }),
 
   /** Manually set the default rates for a product and append a history row. */
   setRates: workspaceProcedure
     .input(z.object({
-      workspaceId: z.string(),
-      productId:   z.string(),
-      dailyRate:   rateString,
-      weeklyRate:  rateString.optional().nullable(),
+      workspaceId:   z.string(),
+      productId:     z.string(),
+      dailyRate:     rateString,
+      weeklyDiscount: z.number().min(0).max(100).optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
       requireRole(ctx.userRole, MANAGER_ROLES);
@@ -165,22 +170,22 @@ export const productRouter = router({
       });
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const dailyRate  = new Decimal(input.dailyRate);
-      const weeklyRate = input.weeklyRate ? new Decimal(input.weeklyRate) : null;
+      const dailyRate       = new Decimal(input.dailyRate);
+      const weeklyDiscount  = input.weeklyDiscount !== null && input.weeklyDiscount !== undefined ? new Decimal(input.weeklyDiscount) : null;
 
       return ctx.prisma.$transaction(async (tx) => {
         const updated = await tx.equipmentProduct.update({
           where: { id: input.productId },
           data: {
             defaultDailyHireRate:  dailyRate,
-            defaultWeeklyHireRate: weeklyRate,
+            defaultWeeklyHireRate: weeklyDiscount,
           },
         });
         await tx.equipmentProductRateHistory.create({
           data: {
             productId:    input.productId,
             dailyRate,
-            weeklyRate,
+            weeklyRate:   weeklyDiscount,
             source:       "manual",
             recordedById: ctx.session.user.id,
           },

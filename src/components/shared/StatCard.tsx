@@ -66,7 +66,7 @@ export function StatCard({
     <div
       className={cn(
         // Card base
-        "relative overflow-hidden rounded-card bg-white border border-grey-mid p-[18px_20px]",
+        "relative overflow-hidden rounded-card bg-white border border-grey-mid p-4",
         // Top border via ::before pseudo — Tailwind pseudo classes
         "before:absolute before:top-0 before:left-0 before:right-0 before:h-[3px] before:content-['']",
         colorMap[color],
@@ -76,7 +76,7 @@ export function StatCard({
       {/* Ghost icon — top-right */}
       {icon && (
         <span
-          className="absolute top-4 right-4 opacity-20 select-none"
+          className="absolute top-3 right-4 opacity-20 select-none"
           aria-hidden
         >
           {icon}
@@ -84,7 +84,7 @@ export function StatCard({
       )}
 
       {/* Label */}
-      <p className="text-caption text-grey uppercase tracking-[0.03125rem] mb-1.5">
+      <p className="text-caption text-grey uppercase tracking-[0.03125rem] mb-1">
         {label}
       </p>
 
@@ -95,7 +95,7 @@ export function StatCard({
 
       {/* Change / subtext */}
       {change && (
-        <p className={cn("text-caption mt-1", changeColorMap[changeColor])}>
+        <p className={cn("text-caption mt-0.5", changeColorMap[changeColor])}>
           {change}
         </p>
       )}

@@ -13,19 +13,17 @@ import { Handshake, PackageCheck, AlertCircle, Tag } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
-type StatusFilter = "all" | "active" | "returned" | "cancelled";
+type StatusFilter = "all" | "active" | "returned";
 
 const FILTER_TABS: { id: StatusFilter; label: string }[] = [
-  { id: "all",       label: "All"       },
-  { id: "active",    label: "Active"    },
-  { id: "returned",  label: "Returned"  },
-  { id: "cancelled", label: "Cancelled" },
+  { id: "all",      label: "All"      },
+  { id: "active",   label: "Active"   },
+  { id: "returned", label: "Returned" },
 ];
 
 const STATUS_STYLES: Record<string, string> = {
-  active:    "bg-violet-100 text-violet-700",
-  returned:  "bg-green-100  text-green-700",
-  cancelled: "bg-gray-100   text-gray-600",
+  active:   "bg-violet-100 text-violet-700",
+  returned: "bg-green-100  text-green-700",
 };
 
 function formatDate(d: string | Date | null | undefined): string {
@@ -52,12 +50,16 @@ export default function CrossHireListPage() {
 
   const stats = useMemo(() => {
     const active = (allEvents ?? []).filter((e) => e.status === "active");
-    const itemsOut = active.reduce((sum, e) => sum + e._count.equipmentItems, 0);
+    // Items on Hire = items still unreturned across active events.
+    const itemsOut = active.reduce(
+      (sum, e) => sum + e.equipmentItems.filter((i) => !i.returnedAt).length,
+      0
+    );
     const dueSoon = active.filter(
       (e) => e.endDate && new Date(e.endDate).getTime() - now < h48 && new Date(e.endDate).getTime() > now
     ).length;
     return { activeCount: active.length, itemsOut, dueSoon };
-  }, [allEvents, now]);
+  }, [allEvents, now, h48]);
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -85,7 +87,7 @@ export default function CrossHireListPage() {
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <StatGrid>
-          <StatCard color="violet" icon={<Handshake className="h-5 w-5" />}    label="Currently Out" value={stats.activeCount} />
+          <StatCard color="violet" icon={<Handshake className="h-5 w-5" />}    label="Cross Hires" value={stats.activeCount} />
           <StatCard color="violet" icon={<PackageCheck className="h-5 w-5" />} label="Items on Hire" value={stats.itemsOut} />
           <StatCard color="amber"  icon={<AlertCircle className="h-5 w-5" />}  label="Due Within 48h" value={stats.dueSoon} />
         </StatGrid>

@@ -22,7 +22,7 @@ const hireCustomerFields = z.object({
 const equipmentItemInput = z.object({
   equipmentId:        z.string(),
   dailyRate:          z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid rate"),
-  weeklyRate:         z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid rate").optional(),
+  weeklyDiscount:     z.number().min(0).max(100).optional(),
   notes:              z.string().optional(),
   saveAsDefaultRate:  z.boolean().optional(),
 });
@@ -133,6 +133,14 @@ export const crossHireRouter = router({
       // Group items by productId for rate-default updates (only items with saveAsDefaultRate=true)
       const equipmentById = new Map(equipment.map((e) => [e.id, e]));
 
+      // Always derive a concrete endDate. If the user picked one explicitly,
+      // use it. Otherwise compute startDate + totalDays so downstream consumers
+      // (PDF, detail page, drawer "due back" stat) always have a value.
+      const startDateObj = new Date(input.startDate);
+      const endDateObj = input.endDate
+        ? new Date(input.endDate)
+        : new Date(startDateObj.getTime() + input.totalDays * 86400000);
+
       // Create the event + items in a transaction
       const event = await ctx.prisma.$transaction(async (tx) => {
         const created = await tx.crossHireEvent.create({
@@ -143,15 +151,15 @@ export const crossHireRouter = router({
             termValue:      input.termValue ?? null,
             termUnit:       input.termUnit  ?? null,
             totalDays:      input.totalDays,
-            startDate:      new Date(input.startDate),
-            endDate:        input.endDate ? new Date(input.endDate) : null,
+            startDate:      startDateObj,
+            endDate:        endDateObj,
             notes:          input.notes ?? null,
             createdById:    userId,
             equipmentItems: {
               create: input.equipmentItems.map((item) => ({
                 equipmentId: item.equipmentId,
                 dailyRate:   new Decimal(item.dailyRate),
-                weeklyRate:  item.weeklyRate ? new Decimal(item.weeklyRate) : null,
+                weeklyRate:  item.weeklyDiscount !== undefined ? new Decimal(item.weeklyDiscount) : null,
                 notes:       item.notes ?? null,
               })),
             },
@@ -175,21 +183,21 @@ export const crossHireRouter = router({
           if (!eq?.productId || productsHandled.has(eq.productId)) continue;
           productsHandled.add(eq.productId);
 
-          const dailyRate  = new Decimal(item.dailyRate);
-          const weeklyRate = item.weeklyRate ? new Decimal(item.weeklyRate) : null;
+          const dailyRate       = new Decimal(item.dailyRate);
+          const weeklyDiscount  = item.weeklyDiscount !== undefined ? new Decimal(item.weeklyDiscount) : null;
 
           await tx.equipmentProduct.update({
             where: { id: eq.productId },
             data: {
               defaultDailyHireRate:  dailyRate,
-              defaultWeeklyHireRate: weeklyRate,
+              defaultWeeklyHireRate: weeklyDiscount,
             },
           });
           await tx.equipmentProductRateHistory.create({
             data: {
               productId:     eq.productId,
               dailyRate,
-              weeklyRate,
+              weeklyRate:    weeklyDiscount,
               source:        "cross_hire",
               sourceEventId: created.id,
               recordedById:  userId,
@@ -389,6 +397,9 @@ export const crossHireRouter = router({
       return { success: true };
     }),
 
+  // Cancelling permanently deletes the cross-hire event (CrossHireItem rows
+  // cascade-delete via the schema), and any items still on hire are flipped
+  // back to "available" so stock is consistent.
   "crossHire.cancel": workspaceProcedure
     .input(z.object({ workspaceId: z.string(), eventId: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -409,20 +420,16 @@ export const crossHireRouter = router({
       const equipmentIds = event.equipmentItems.map((i) => i.equipmentId);
 
       await ctx.prisma.$transaction(async (tx) => {
-        await tx.crossHireEvent.update({
-          where: { id: input.eventId },
-          data:  { status: "cancelled" },
-        });
-
         if (equipmentIds.length > 0) {
           await tx.equipment.updateMany({
             where: { id: { in: equipmentIds }, workspaceId: wid },
             data:  { status: "available" },
           });
         }
+        await tx.crossHireEvent.delete({ where: { id: input.eventId } });
       });
 
-      return { success: true };
+      return { success: true, deleted: true };
     }),
 
   "crossHire.update": workspaceProcedure
@@ -434,10 +441,10 @@ export const crossHireRouter = router({
       endDate:     z.string().nullable().optional(),
       notes:       z.string().nullable().optional(),
       items:       z.array(z.object({
-        id:         z.string(),
-        dailyRate:  z.string().regex(/^\d+(\.\d{1,2})?$/),
-        weeklyRate: z.string().regex(/^\d+(\.\d{1,2})?$/).optional().nullable(),
-        notes:      z.string().optional().nullable(),
+        id:              z.string(),
+        dailyRate:       z.string().regex(/^\d+(\.\d{1,2})?$/),
+        weeklyDiscount:  z.number().min(0).max(100).optional().nullable(),
+        notes:           z.string().optional().nullable(),
       })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -470,9 +477,9 @@ export const crossHireRouter = router({
             await tx.crossHireItem.update({
               where: { id: item.id },
               data: {
-                dailyRate:  new Decimal(item.dailyRate),
-                weeklyRate: item.weeklyRate ? new Decimal(item.weeklyRate) : null,
-                notes:      item.notes ?? null,
+                dailyRate:   new Decimal(item.dailyRate),
+                weeklyRate:  item.weeklyDiscount !== undefined && item.weeklyDiscount !== null ? new Decimal(item.weeklyDiscount) : null,
+                notes:       item.notes ?? null,
               },
             });
           }

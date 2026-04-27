@@ -6,6 +6,7 @@ import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
+import Link from "next/link";
 import { Search, X, Plus, AlertTriangle } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ interface BatchItem {
 interface RateGroup {
   name:              string;
   dailyRate:         string;
-  weeklyRate:        string;
+  weeklyDiscount:    string;
   notes:             string;
   saveAsDefault:     boolean;
   originalDailyRate: string;
@@ -166,9 +167,9 @@ export default function NewCrossHirePage() {
       // Ensure a rate group exists for this product name
       setRateGroups((prev) => {
         if (prev[name]) return prev;
-        const daily  = match.product?.defaultDailyHireRate  ? String(match.product.defaultDailyHireRate)  : "";
+        const daily = match.product?.defaultDailyHireRate ? String(match.product.defaultDailyHireRate) : "";
         const weekly = match.product?.defaultWeeklyHireRate ? String(match.product.defaultWeeklyHireRate) : "";
-        return { ...prev, [name]: { name, dailyRate: daily, weeklyRate: weekly, notes: "", saveAsDefault: false, originalDailyRate: daily } };
+        return { ...prev, [name]: { name, dailyRate: daily, weeklyDiscount: weekly, notes: "", saveAsDefault: false, originalDailyRate: daily } };
       });
     } catch {
       setScanError("Error looking up serial. Please try again.");
@@ -264,7 +265,14 @@ export default function NewCrossHirePage() {
     const daily = parseFloat(group.dailyRate);
     if (!Number.isFinite(daily)) return 0;
     const count = batch.filter((b) => b.name === name).length;
-    return count * daily * totalDays;
+    let subtotal = count * daily * totalDays;
+    if (totalDays >= 7 && group.weeklyDiscount) {
+      const discount = parseFloat(group.weeklyDiscount);
+      if (Number.isFinite(discount) && discount > 0) {
+        subtotal = subtotal * (1 - discount / 100);
+      }
+    }
+    return subtotal;
   }
 
   const grandTotal = productGroups.reduce((sum, name) => sum + subtotalForGroup(name), 0);
@@ -295,10 +303,11 @@ export default function NewCrossHirePage() {
       notes:   notes   || undefined,
       equipmentItems: batch.map((item) => {
         const group = rateGroups[item.name]!;
+        const weeklyDiscountNum = group.weeklyDiscount ? parseFloat(group.weeklyDiscount) : undefined;
         return {
           equipmentId:       item.equipmentId,
           dailyRate:         group.dailyRate,
-          weeklyRate:        group.weeklyRate || undefined,
+          weeklyDiscount:    Number.isFinite(weeklyDiscountNum) ? weeklyDiscountNum : undefined,
           notes:             group.notes      || undefined,
           saveAsDefaultRate: group.saveAsDefault || undefined,
         };
@@ -310,7 +319,16 @@ export default function NewCrossHirePage() {
 
   return (
     <>
-      <AppTopbar title="New Cross Hire" />
+      <AppTopbar
+        title="New Cross Hire"
+        actions={
+          <Link href="/cross-hire">
+            <Button size="sm">
+              All Cross Hires
+            </Button>
+          </Link>
+        }
+      />
 
       <div className="flex-1 overflow-y-auto pb-24">
         <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
@@ -619,9 +637,9 @@ export default function NewCrossHirePage() {
                             className={inputCls} />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-medium text-grey mb-1">Weekly Rate (£)</label>
-                          <input type="number" min="0" step="0.01" value={group.weeklyRate}
-                            onChange={(e) => setRateGroups((rg) => ({ ...rg, [name]: { ...rg[name]!, weeklyRate: e.target.value } }))}
+                          <label className="block text-[11px] font-medium text-grey mb-1">Weekly Discount (%)</label>
+                          <input type="number" min="0" max="100" step="0.01" value={group.weeklyDiscount}
+                            onChange={(e) => setRateGroups((rg) => ({ ...rg, [name]: { ...rg[name]!, weeklyDiscount: e.target.value } }))}
                             className={inputCls} />
                         </div>
                         <div>
@@ -649,15 +667,22 @@ export default function NewCrossHirePage() {
                       )}
 
                       {/* Subtotal */}
-                      <div className="flex items-center justify-between pt-2 border-t border-grey-mid/60">
-                        <span className="text-[11px] text-grey">
-                          {dailyValid && totalDays
-                            ? `${count} × £${dailyNum.toFixed(2)}/day × ${totalDays} day${totalDays === 1 ? "" : "s"}`
-                            : "Enter a daily rate and duration to see the subtotal"}
-                        </span>
-                        <span className={`text-[13px] font-semibold ${subtotal > 0 ? "text-surface-dark" : "text-grey"}`}>
-                          £{subtotal.toFixed(2)}
-                        </span>
+                      <div className="space-y-1.5 pt-2 border-t border-grey-mid/60">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-grey">
+                            {dailyValid && totalDays
+                              ? `${count} × £${dailyNum.toFixed(2)}/day × ${totalDays} day${totalDays === 1 ? "" : "s"}`
+                              : "Enter a daily rate and duration to see the subtotal"}
+                          </span>
+                          <span className={`text-[13px] font-semibold ${subtotal > 0 ? "text-surface-dark" : "text-grey"}`}>
+                            £{subtotal.toFixed(2)}
+                          </span>
+                        </div>
+                        {totalDays && totalDays >= 7 && group.weeklyDiscount && Number(group.weeklyDiscount) > 0 && (
+                          <div className="text-[10px] text-status-green font-medium">
+                            7+ day hire — {Number(group.weeklyDiscount).toFixed(1)}% weekly discount applied
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
