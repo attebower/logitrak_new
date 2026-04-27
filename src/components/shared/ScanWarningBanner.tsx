@@ -82,7 +82,7 @@ export function ScanWarningBanner({ warning, onDismiss }: ScanWarningBannerProps
             href={warning.action.href}
             className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold underline underline-offset-2 hover:opacity-80"
           >
-            {warning.action.label} →
+            {warning.action.label}
           </a>
         )}
       </div>

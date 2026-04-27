@@ -10,6 +10,7 @@
 
 "use client";
 
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { StatusPill, type StatusPillValue } from "@/components/shared/StatusPill";
@@ -46,6 +47,16 @@ export interface DamageEvent {
   repairedAt?:   string;
 }
 
+export interface CrossHireInfo {
+  eventId:        string;
+  productionName: string;
+  contactName?:   string | null;
+  contactEmail?:  string | null;
+  contactPhone?:  string | null;
+  startDate:      string;
+  endDate?:       string | null;
+}
+
 export interface EquipmentDetail {
   id:            string;
   serial:        string;
@@ -54,6 +65,8 @@ export interface EquipmentDetail {
   status:        StatusPillValue;
   /** Structured current location (when issued). If absent, shown as "In stock". */
   location?:     LocationParts | null;
+  /** Active cross-hire (when status is cross_hired). Replaces the location card. */
+  crossHire?:    CrossHireInfo | null;
   notes?:        string;
   addedAt:       string;
   /** When the item was last checked out (only present if currently issued) */
@@ -126,10 +139,14 @@ export function EquipmentDetailPanel({
             {/* ── Body ── */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
-              <LocationCard
-                location={equipment.location ?? null}
-                issuedFor={equipment.issuedAt ? durationFromNow(equipment.issuedAt) : null}
-              />
+              {equipment.crossHire ? (
+                <CrossHireCard info={equipment.crossHire} />
+              ) : (
+                <LocationCard
+                  location={equipment.location ?? null}
+                  issuedFor={equipment.issuedAt ? durationFromNow(equipment.issuedAt) : null}
+                />
+              )}
 
               <InfoCard>
                 <InfoRow label="Category" value={equipment.category} />
@@ -330,6 +347,41 @@ function LocationCard({
         {position     && <LocRow label="Position" value={position}   />}
         {loc.exact    && <LocRow label="Details"  value={loc.exact} wrap />}
       </dl>
+    </div>
+  );
+}
+
+function CrossHireCard({ info }: { info: CrossHireInfo }) {
+  const now = Date.now();
+  const endMs    = info.endDate ? new Date(info.endDate).getTime() : null;
+  const isOverdue   = !!(endMs && endMs < now);
+  const daysOverdue = isOverdue && endMs ? Math.floor((now - endMs) / 86400000) : 0;
+
+  return (
+    <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+      <div className="px-4 py-1.5 border-b border-grey-mid flex items-center justify-between bg-violet-50">
+        <h3 className="text-[10px] font-semibold text-violet-700 uppercase tracking-wider">On Cross Hire</h3>
+        {isOverdue && (
+          <span className="text-[10px] font-bold uppercase tracking-wide bg-red-100 text-red-600 px-1.5 py-0.5 rounded">
+            {daysOverdue}d overdue
+          </span>
+        )}
+      </div>
+      <dl className="divide-y divide-grey-mid">
+        <LocRow label="Production" value={info.productionName} />
+        {info.contactName  && <LocRow label="Contact"  value={info.contactName} />}
+        {info.contactPhone && <LocRow label="Phone"    value={info.contactPhone} />}
+        {info.contactEmail && <LocRow label="Email"    value={info.contactEmail} />}
+        <LocRow label="Start" value={formatDate(info.startDate)} />
+        {info.endDate && <LocRow label="Due back" value={formatDate(info.endDate)} />}
+      </dl>
+      <div className="px-4 py-2 border-t border-grey-mid bg-grey-light/30">
+        <Link href={`/cross-hire/${info.eventId}`}>
+          <Button variant="primary" size="sm">
+            Open cross hire
+          </Button>
+        </Link>
+      </div>
     </div>
   );
 }

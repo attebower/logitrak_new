@@ -198,6 +198,11 @@ export const equipmentRouter = router({
               },
             },
           },
+          crossHireItems: {
+            where: { returnedAt: null, crossHireEvent: { status: "active" } },
+            include: { crossHireEvent: { include: { hireCustomer: true } } },
+            take: 1,
+          },
         },
       });
       if (!equipment) throw new TRPCError({ code: "NOT_FOUND", message: "Equipment not found" });

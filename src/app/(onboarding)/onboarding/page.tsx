@@ -364,7 +364,7 @@ export default function OnboardingPage() {
                   disabled={!companyName.trim() || !fullName.trim() || !department || updateProfile.isPending || createWorkspace.isPending || updateWorkspace.isPending}
                   onClick={handleStep1}
                 >
-                  {(updateProfile.isPending || createWorkspace.isPending || updateWorkspace.isPending) ? "Saving…" : "Continue →"}
+                  {(updateProfile.isPending || createWorkspace.isPending || updateWorkspace.isPending) ? "Saving…" : "Continue"}
                 </Button>
               </div>
             </>
@@ -445,7 +445,7 @@ export default function OnboardingPage() {
                   disabled={updateWorkspace.isPending}
                   onClick={handlePlanStep}
                 >
-                  {updateWorkspace.isPending ? "Saving…" : "Start 7-day trial →"}
+                  {updateWorkspace.isPending ? "Saving…" : "Start 7-day trial"}
                 </Button>
               </div>
             </>
@@ -533,7 +533,7 @@ export default function OnboardingPage() {
                     onClick={handleInviteStep}
                     disabled={inviting}
                   >
-                    {inviting ? "Sending…" : "Continue →"}
+                    {inviting ? "Sending…" : "Continue"}
                   </Button>
                 </div>
               </div>
@@ -553,7 +553,7 @@ export default function OnboardingPage() {
                 Welcome to LogiTrak{firstName ? `, ${firstName}` : ""}.
               </p>
               <Button variant="primary" onClick={() => router.push("/dashboard")}>
-                Go to Dashboard →
+                Go to Dashboard
               </Button>
             </div>
           )}

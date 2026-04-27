@@ -21,7 +21,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, ArrowLeftRight, List, AlertTriangle,
+  LayoutDashboard, ArrowRight, RotateCcw, List, AlertTriangle,
   FileText, Users, Building2, Settings, MoreHorizontal,
 } from "lucide-react";
 
@@ -38,20 +38,23 @@ interface SheetItem {
   label: string;
   href:  string;
   icon:  React.ReactNode;
+  section?: string;
 }
 
 const PRIMARY_TABS: PrimaryTab[] = [
-  { label: "Dashboard",    href: "/dashboard",  icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
-  { label: "Check In/Out", href: "/checkinout", icon: <ArrowLeftRight className="h-[18px] w-[18px]" /> },
-  { label: "Equipment",    href: "/equipment",  icon: <List className="h-[18px] w-[18px]" /> },
-  { label: "Damage",       href: "/damage",     icon: <AlertTriangle className="h-[18px] w-[18px]" /> },
+  { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
+  { label: "Issue",     href: "/issue",     icon: <ArrowRight className="h-[18px] w-[18px]" /> },
+  { label: "Return",    href: "/return",    icon: <RotateCcw className="h-[18px] w-[18px]" /> },
+  { label: "Equipment", href: "/equipment", icon: <List className="h-[18px] w-[18px]" /> },
+  { label: "Damage",    href: "/damage",    icon: <AlertTriangle className="h-[18px] w-[18px]" /> },
 ];
 
 const SHEET_ITEMS: SheetItem[] = [
-  { label: "Reports",   href: "/reports",   icon: <FileText className="h-[20px] w-[20px]" /> },
-  { label: "Team",      href: "/team",      icon: <Users className="h-[20px] w-[20px]" /> },
-  { label: "Locations", href: "/locations", icon: <Building2 className="h-[20px] w-[20px]" /> },
-  { label: "Settings",  href: "/settings",  icon: <Settings className="h-[20px] w-[20px]" /> },
+  { label: "Cross Hire", href: "/cross-hire", icon: <FileText className="h-[20px] w-[20px]" />, section: "Manage Stock" },
+  { label: "Reports",   href: "/reports",   icon: <FileText className="h-[20px] w-[20px]" />, section: "Manage Stock" },
+  { label: "Team",      href: "/team",      icon: <Users className="h-[20px] w-[20px]" />, section: "Admin" },
+  { label: "Locations", href: "/locations", icon: <Building2 className="h-[20px] w-[20px]" />, section: "Admin" },
+  { label: "Settings",  href: "/settings",  icon: <Settings className="h-[20px] w-[20px]" />, section: "Admin" },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -187,28 +190,39 @@ export function MobileBottomNav({
         </div>
 
         {/* Sheet items */}
-        <div className="px-4 pb-4">
-          {SHEET_ITEMS.map((item) => {
-            const isActive = current === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-4 px-4 py-3.5 rounded-[10px] transition-colors",
-                  isActive
-                    ? "bg-brand-blue/8 text-brand-blue"
-                    : "text-surface-dark hover:bg-grey-light"
-                )}
-                aria-current={isActive ? "page" : undefined}
-              >
-                <span className="w-7 flex items-center justify-center" aria-hidden>
-                  {item.icon}
-                </span>
-                <span className="text-[15px] font-medium">{item.label}</span>
-              </Link>
-            );
-          })}
+        <div className="px-4 pb-4 space-y-4">
+          {Array.from(new Set(SHEET_ITEMS.map((i) => i.section))).map((section) => (
+            <div key={section}>
+              {section && (
+                <h3 className="px-4 py-2 text-[11px] font-semibold text-grey uppercase tracking-wide">
+                  {section}
+                </h3>
+              )}
+              <div className="space-y-1">
+                {SHEET_ITEMS.filter((item) => item.section === section).map((item) => {
+                  const isActive = current === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-4 px-4 py-3.5 rounded-[10px] transition-colors",
+                        isActive
+                          ? "bg-brand-blue/8 text-brand-blue"
+                          : "text-surface-dark hover:bg-grey-light"
+                      )}
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <span className="w-7 flex items-center justify-center" aria-hidden>
+                        {item.icon}
+                      </span>
+                      <span className="text-[15px] font-medium">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </>

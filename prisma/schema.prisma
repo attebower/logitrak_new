@@ -45,6 +45,8 @@ model Workspace {
   invitations          WorkspaceInvitation[]
   members              WorkspaceUser[]
   labelBatches         LabelBatch[]
+  crossHireEvents      CrossHireEvent[]
+  hireCustomers        HireCustomer[]
 
   @@map("workspaces")
 }
@@ -55,14 +57,16 @@ model LabelBatch {
   serialStart      Int
   serialEnd        Int
   quantity         Int
-  design           String   // standard | compact | barcode_focus | full_detail | high_visibility
-  codeType         String   // qr | barcode
-  labelType        String   // blank | assigned
-  printerType      String
-  labelSize        String
-  fileUrl          String?
-  createdById      String?
-  createdAt        DateTime @default(now())
+  design              String   // minimal | standard | full
+  codeType            String   // qr | barcode
+  labelType           String   // blank | assigned
+  printerType         String   // stickermule | brother_ql | custom_csv
+  labelSize           String
+  status              String   @default("pending") // pending | complete | cancelled
+  fileUrl             String?
+  stickerMuleOrderUrl String?
+  createdById         String?
+  createdAt           DateTime @default(now())
   workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, createdAt])
@@ -163,7 +167,8 @@ model Equipment {
   parent        Equipment?         @relation("EquipmentKits", fields: [parentId], references: [id])
   children      Equipment[]        @relation("EquipmentKits")
   workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  repairLogs    RepairLog[]
+  repairLogs      RepairLog[]
+  crossHireItems  CrossHireItem[]
 
   @@unique([workspaceId, serial])
   @@index([workspaceId, status])
@@ -182,16 +187,37 @@ model EquipmentProduct {
   name          String             // Canonical display name, e.g. "Arri SkyPanel S60-C"
   searchKey     String             // Lowercase, stripped name used for dedupe + search
   categoryId    String?
-  description   String?
-  createdAt     DateTime           @default(now())
+  description            String?
+  defaultDailyHireRate   Decimal? @db.Decimal(10, 2)
+  defaultWeeklyHireRate  Decimal? @db.Decimal(10, 2)
+  createdAt              DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   equipment     Equipment[]
   category      EquipmentCategory? @relation(fields: [categoryId], references: [id])
   workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rateHistory   EquipmentProductRateHistory[]
 
   @@unique([workspaceId, searchKey])
   @@index([workspaceId, name])
   @@map("equipment_products")
+}
+
+/// Append-only audit trail of rate changes for an EquipmentProduct. Written
+/// whenever the user saves a rental rate (manually from the rates page, or
+/// via the "save as default" prompt during a cross-hire).
+model EquipmentProductRateHistory {
+  id            String           @id @default(cuid())
+  productId     String
+  dailyRate     Decimal          @db.Decimal(10, 2)
+  weeklyRate    Decimal?         @db.Decimal(10, 2)
+  source        String           // "manual" | "cross_hire"
+  sourceEventId String?          // CrossHireEvent id when source = "cross_hire"
+  recordedById  String?
+  recordedAt    DateTime         @default(now())
+  product       EquipmentProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, recordedAt])
+  @@map("equipment_product_rate_history")
 }
 
 model Studio {
@@ -492,8 +518,14 @@ enum WorkspaceRole {
 
 enum EquipmentStatus {
   available
-  checked_out
+  checked_out  // legacy — new records use issued
+  issued
+  damaged
+  under_repair
+  repaired
+  lost
   retired
+  cross_hired
 }
 
 enum DamageStatus {
@@ -519,4 +551,73 @@ enum PositionType {
   rigged_to_outside_of_set
   inside_prop_make
   in_prop_dressing
+}
+
+model HireCustomer {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  productionName  String
+  vatNumber       String?
+  contactName     String?
+  contactEmail    String?
+  contactPhone    String?
+  addressLine1    String?
+  addressLine2    String?
+  city            String?
+  county          String?
+  postcode        String?
+  country         String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  crossHireEvents CrossHireEvent[]
+
+  @@index([workspaceId])
+  @@map("hire_customers")
+}
+
+model CrossHireEvent {
+  id             String               @id @default(cuid())
+  workspaceId    String
+  hireCustomerId String
+  termsOfHire    String
+  termValue      Int?                 // Manual duration when no end date — number paired with termUnit
+  termUnit       String?              // "days" | "weeks" | "months" — paired with termValue
+  totalDays      Int?                 // Computed total days used for rate calculations
+  startDate      DateTime
+  endDate        DateTime?
+  notes          String?
+  status         CrossHireEventStatus @default(active)
+  createdById    String
+  invoiceNumber  String?
+  returnedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  workspace      Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  hireCustomer   HireCustomer         @relation(fields: [hireCustomerId], references: [id])
+  equipmentItems CrossHireItem[]
+
+  @@index([workspaceId, status])
+  @@map("cross_hire_events")
+}
+
+model CrossHireItem {
+  id               String         @id @default(cuid())
+  crossHireEventId String
+  equipmentId      String
+  dailyRate        Decimal        @db.Decimal(10, 2)
+  weeklyRate       Decimal?       @db.Decimal(10, 2)
+  quantity         Int            @default(1)
+  notes            String?
+  returnedAt       DateTime?
+  crossHireEvent   CrossHireEvent @relation(fields: [crossHireEventId], references: [id], onDelete: Cascade)
+  equipment        Equipment      @relation(fields: [equipmentId], references: [id])
+
+  @@map("cross_hire_items")
+}
+
+enum CrossHireEventStatus {
+  active
+  returned
+  cancelled
 }

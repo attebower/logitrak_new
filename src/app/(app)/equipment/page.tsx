@@ -41,12 +41,13 @@ const EQUIPMENT_COLS: ColumnDef[] = [
     render: (row) => <StatusPill size="sm" status={effectiveStatus(String(row.status ?? ""), String(row.damageStatus ?? "normal"))} /> },
 ];
 
-type StatusFilter = "all" | "available" | "issued" | "damaged" | "under_repair" | "repaired" | "retired";
+type StatusFilter = "all" | "available" | "issued" | "damaged" | "under_repair" | "repaired" | "retired" | "cross_hired";
 
 const FILTER_TABS: { id: StatusFilter; label: string }[] = [
   { id: "all",          label: "All"          },
   { id: "available",    label: "Available"    },
   { id: "issued",       label: "Issued"       },
+  { id: "cross_hired",  label: "Cross Hired"  },
   { id: "damaged",      label: "Damaged"      },
   { id: "under_repair", label: "Under Repair" },
   { id: "repaired",     label: "Repaired"     },
@@ -100,6 +101,7 @@ export default function EquipmentPage() {
       const s  = r.status;
       if (statusFilter === "available")    return s === "available" && (!ds || ds === "normal");
       if (statusFilter === "issued")       return s === "checked_out" && (!ds || ds === "normal");
+      if (statusFilter === "cross_hired")  return s === "cross_hired";
       if (statusFilter === "damaged")      return ds === "damaged";
       if (statusFilter === "under_repair") return ds === "under_repair";
       if (statusFilter === "repaired")     return ds === "repaired";
@@ -116,6 +118,7 @@ export default function EquipmentPage() {
       all: all.length,
       available:    count((e) => e.status === "available" && (!e.damageStatus || e.damageStatus === "normal")),
       issued:       count((e) => e.status === "checked_out" && (!e.damageStatus || e.damageStatus === "normal")),
+      cross_hired:  count((e) => e.status === "cross_hired"),
       damaged:      count((e) => e.damageStatus === "damaged"),
       under_repair: count((e) => e.damageStatus === "under_repair"),
       repaired:     count((e) => e.damageStatus === "repaired"),
@@ -139,6 +142,31 @@ export default function EquipmentPage() {
           exact:      latest.exactLocationDescription ?? null,
         }
       : null;
+    const activeCrossHire = (eq as { crossHireItems?: Array<{
+      crossHireEvent: {
+        id: string;
+        startDate: Date;
+        endDate: Date | null;
+        hireCustomer: {
+          productionName: string;
+          contactName:    string | null;
+          contactEmail:   string | null;
+          contactPhone:   string | null;
+        };
+      };
+    }> }).crossHireItems?.[0];
+    const crossHire = activeCrossHire
+      ? {
+          eventId:        activeCrossHire.crossHireEvent.id,
+          productionName: activeCrossHire.crossHireEvent.hireCustomer.productionName,
+          contactName:    activeCrossHire.crossHireEvent.hireCustomer.contactName,
+          contactEmail:   activeCrossHire.crossHireEvent.hireCustomer.contactEmail,
+          contactPhone:   activeCrossHire.crossHireEvent.hireCustomer.contactPhone,
+          startDate:      activeCrossHire.crossHireEvent.startDate.toISOString(),
+          endDate:        activeCrossHire.crossHireEvent.endDate?.toISOString() ?? null,
+        }
+      : null;
+
     return {
       id:       eq.id,
       serial:   eq.serial,
@@ -147,6 +175,7 @@ export default function EquipmentPage() {
       status:   effectiveStatus(eq.status, eq.damageStatus),
       notes:    eq.notes ?? undefined,
       location: currentLocation,
+      crossHire,
       addedAt:  eq.createdAt.toISOString(),
       issuedAt: isCurrentlyIssued && latest ? new Date(latest.createdAt).toISOString() : null,
       checkHistory: eq.checkEvents.map((ce) => ({

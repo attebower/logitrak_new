@@ -18,8 +18,9 @@ import { WorkspaceProvider } from "@/lib/workspace-context";
 import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 import type { NavSection } from "@/components/shared/AppSidebar";
 import {
-  LayoutDashboard, ArrowLeftRight, List, Plus,
+  LayoutDashboard, ArrowRight, RotateCcw, List, Plus,
   FileText, AlertTriangle, Users, Settings, Clapperboard, Tag as TagIcon,
+  Handshake,
 } from "lucide-react";
 
 // Alias for clarity (Tag is also a sidebar section label)
@@ -29,9 +30,16 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Main",
     items: [
-      { label: "Dashboard",    href: "/dashboard",  icon: <LayoutDashboard className="h-4 w-4" /> },
-      { label: "Check In/Out", href: "/checkinout", icon: <ArrowLeftRight className="h-4 w-4" /> },
-      { label: "Projects",     href: "/projects",   icon: <Clapperboard className="h-4 w-4" /> },
+      { label: "Dashboard",  href: "/dashboard",   icon: <LayoutDashboard className="h-4 w-4" /> },
+      { label: "Projects",   href: "/projects",    icon: <Clapperboard className="h-4 w-4" /> },
+    ],
+  },
+  {
+    label: "Track Kit",
+    items: [
+      { label: "Issue",      href: "/issue",       icon: <ArrowRight className="h-4 w-4" /> },
+      { label: "Return",     href: "/return",      icon: <RotateCcw className="h-4 w-4" /> },
+      { label: "Cross Hire", href: "/cross-hire",  icon: <Handshake className="h-4 w-4" /> },
     ],
   },
   {

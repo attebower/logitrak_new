@@ -19,15 +19,15 @@ import { cn } from "@/lib/utils";
 import type { BadgeProps } from "@/components/ui/badge";
 import {
   LayoutDashboard, CheckCircle2, ArrowLeftRight, AlertTriangle,
-  RotateCcw, Plus, List, Wrench, PackageOpen, Users, TrendingUp, Film,
+  RotateCcw, Plus, List, Wrench, PackageOpen, Users, TrendingUp, Film, Handshake,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // ── Quick actions (static — no data dependency) ────────────────────────────
 
 const QUICK_ACTIONS: Array<{ label: string; icon: LucideIcon; desc: string; href: string }> = [
-  { label: "Check Out",      icon: ArrowLeftRight, desc: "Sign out items to crew",  href: "/checkinout" },
-  { label: "Check In",       icon: RotateCcw,      desc: "Return items to stock",   href: "/checkinout" },
+  { label: "Issue",          icon: ArrowLeftRight, desc: "Sign out items to crew",  href: "/issue" },
+  { label: "Return",         icon: RotateCcw,      desc: "Return items to stock",   href: "/return" },
   { label: "Report Damage",  icon: AlertTriangle,  desc: "Log a damaged item",      href: "/damage" },
   { label: "Add Equipment",  icon: Plus,           desc: "Register new assets",     href: "/equipment/new" },
   { label: "Equipment List", icon: List,           desc: "Browse all assets",       href: "/equipment" },
@@ -117,6 +117,12 @@ export default function DashboardPage() {
             value={statsLoading ? "—" : (stats?.damaged ?? 0)}
             changeColor="red"
           />
+          <StatCard
+            color="violet"
+            icon={<Handshake className="h-5 w-5" />}
+            label="Cross Hired"
+            value={statsLoading ? "—" : (stats?.crossHired ?? 0)}
+          />
         </StatGrid>
 
         {/* 3 × 2 widget grid */}
@@ -127,6 +133,7 @@ export default function DashboardPage() {
           <TeamMembersWidget workspaceId={workspaceId} />
           <MostUsedWidget workspaceId={workspaceId} />
           <ProjectsWidget workspaceId={workspaceId} />
+          <ActiveCrossHiresWidget workspaceId={workspaceId} />
         </div>
       </div>
     </>
@@ -403,6 +410,82 @@ function WindowTab({
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────
+
+// ── Active Cross Hires ────────────────────────────────────────────────────
+
+function formatShortDate(d: string | Date | null | undefined): string {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
+function ActiveCrossHiresWidget({ workspaceId }: { workspaceId: string }) {
+  const { data, isLoading } = trpc.crossHire["crossHire.list"].useQuery(
+    { workspaceId, status: "active" },
+    { refetchInterval: 60_000 }
+  );
+
+  const now = Date.now();
+  const sorted = (data ?? []).slice().sort((a, b) => {
+    const aEnd = a.endDate ? new Date(a.endDate).getTime() : Infinity;
+    const bEnd = b.endDate ? new Date(b.endDate).getTime() : Infinity;
+    return aEnd - bEnd;
+  });
+
+  return (
+    <Widget
+      title="Active Cross Hires"
+      action={
+        <Link href="/cross-hire" className="text-[11px] text-grey hover:text-brand-blue">View all</Link>
+      }
+    >
+      {isLoading ? (
+        <SkeletonRows count={5} />
+      ) : sorted.length === 0 ? (
+        <EmptyWidget>
+          <Handshake className="h-5 w-5 text-grey mx-auto mb-2" />
+          No active cross hires.
+        </EmptyWidget>
+      ) : (
+        <div className="divide-y divide-grey-mid">
+          {sorted.slice(0, 5).map((event) => {
+            const total       = event.equipmentItems.length;
+            const returned    = event.equipmentItems.filter((i) => i.returnedAt).length;
+            const outstanding = total - returned;
+            const endMs       = event.endDate ? new Date(event.endDate).getTime() : null;
+            const isOverdue   = !!endMs && endMs < now;
+            const daysOverdue = isOverdue && endMs ? Math.floor((now - endMs) / 86400000) : 0;
+
+            return (
+              <Link
+                key={event.id}
+                href={`/cross-hire/${event.id}`}
+                className="flex items-center gap-3 px-5 py-2.5 hover:bg-grey-light/50 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-medium text-surface-dark truncate">
+                    {event.hireCustomer.productionName}
+                  </div>
+                  <div className="text-[11px] text-grey truncate">
+                    {outstanding} of {total} on hire
+                  </div>
+                </div>
+                {isOverdue ? (
+                  <span className="text-[10px] font-bold uppercase tracking-wide bg-red-100 text-red-600 px-1.5 py-0.5 rounded whitespace-nowrap">
+                    {daysOverdue}d overdue
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-grey whitespace-nowrap">
+                    Due {formatShortDate(event.endDate)}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </Widget>
+  );
+}
 
 function ProjectsWidget({ workspaceId }: { workspaceId: string }) {
   const { data, isLoading } = trpc.project.list.useQuery({ workspaceId });

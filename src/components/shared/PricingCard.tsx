@@ -127,7 +127,7 @@ export function PricingCard(props: PricingCardProps) {
                   onClick={props.onManageBilling}
                   className="w-full"
                 >
-                  Manage billing →
+                  Manage billing
                 </Button>
               )}
             </div>

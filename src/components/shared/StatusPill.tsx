@@ -18,7 +18,8 @@ export type StatusPillValue =
   | "damaged"
   | "under_repair"
   | "repaired"
-  | "retired";
+  | "retired"
+  | "cross_hired";
 
 const STATUS_META: Record<StatusPillValue, { label: string; chip: string }> = {
   available:    { label: "Available",    chip: "bg-status-green-light text-status-green" },
@@ -27,6 +28,7 @@ const STATUS_META: Record<StatusPillValue, { label: string; chip: string }> = {
   under_repair: { label: "Under Repair", chip: "bg-status-amber-light text-status-amber" },
   repaired:     { label: "Repaired",     chip: "bg-status-teal-light text-status-teal"  },
   retired:      { label: "Retired",      chip: "bg-grey-mid          text-surface-dark" },
+  cross_hired:  { label: "Cross Hired",  chip: "bg-violet-100        text-violet-700"   },
 };
 
 export function StatusPill({
@@ -67,5 +69,6 @@ export function effectiveStatus(
   if (damageStatus === "repaired")     return "repaired";
   if (status === "checked_out")        return "issued";
   if (status === "retired")            return "retired";
+  if (status === "cross_hired")        return "cross_hired";
   return "available";
 }

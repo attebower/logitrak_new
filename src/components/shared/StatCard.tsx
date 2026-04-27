@@ -20,11 +20,12 @@ import { cn } from "@/lib/utils";
 
 // Top-border colour variants — maps to spec stat card colours
 const colorMap = {
-  blue:  "before:bg-brand-blue",
-  green: "before:bg-status-green",
-  amber: "before:bg-status-amber",
-  red:   "before:bg-status-red",
-  teal:  "before:bg-status-teal",
+  blue:   "before:bg-brand-blue",
+  green:  "before:bg-status-green",
+  amber:  "before:bg-status-amber",
+  red:    "before:bg-status-red",
+  teal:   "before:bg-status-teal",
+  violet: "before:bg-violet-500",
 } as const;
 
 const changeColorMap = {
@@ -102,10 +103,10 @@ export function StatCard({
   );
 }
 
-// Convenience preset — matches the 4-up dashboard stat grid
+// Convenience preset — matches the dashboard stat grid (auto-fits cards)
 export function StatGrid({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-6">
       {children}
     </div>
   );

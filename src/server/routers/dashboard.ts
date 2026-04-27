@@ -7,7 +7,7 @@ export const dashboardRouter = router({
     .query(async ({ ctx }) => {
       const wid = ctx.workspaceId!;
 
-      const [totalEquipment, available, checkedOut, damaged, recentActivity] =
+      const [totalEquipment, available, checkedOut, damaged, crossHired, recentActivity] =
         await ctx.prisma.$transaction([
           ctx.prisma.equipment.count({
             where: { workspaceId: wid, status: { not: "retired" } },
@@ -25,6 +25,9 @@ export const dashboardRouter = router({
               damageStatus: { not: "normal" },
             },
           }),
+          ctx.prisma.equipment.count({
+            where: { workspaceId: wid, status: "cross_hired" },
+          }),
           ctx.prisma.activityEvent.findMany({
             where: { workspaceId: wid },
             orderBy: { createdAt: "desc" },
@@ -40,6 +43,7 @@ export const dashboardRouter = router({
         available,
         checkedOut,
         damaged,
+        crossHired,
         recentActivity,
       };
     }),
