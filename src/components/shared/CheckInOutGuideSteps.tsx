@@ -68,7 +68,7 @@ export function CheckInOutGuideSteps() {
 
       {expanded && (
         <div className="relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map((step, i) => (
+          {STEPS.map((step) => (
             <div
               key={step.num}
               className="relative p-5 border-grey-mid border-b md:border-b-0 md:border-r last:border-0 md:last:border-r-0"

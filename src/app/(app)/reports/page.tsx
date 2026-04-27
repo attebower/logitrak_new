@@ -15,7 +15,6 @@ import { ReportTable } from "@/components/shared/ReportTable";
 import { ReportFilterBar } from "@/components/shared/ReportFilterBar";
 import { EquipmentDetailPanel } from "@/components/shared/EquipmentDetailPanel";
 import { StatusPill, effectiveStatus as sharedEffectiveStatus } from "@/components/shared/StatusPill";
-import { locationChain } from "@/lib/format";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { downloadReportPdf } from "@/lib/pdf/ReportPdf";
