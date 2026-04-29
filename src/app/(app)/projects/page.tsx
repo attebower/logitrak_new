@@ -1249,7 +1249,7 @@ function ProjectDetail({
             {projectSets.map((ps) => (
               <div
                 key={ps.id}
-                className="px-5 py-3.5 flex items-center gap-4 group hover:bg-grey-light/60 transition-colors cursor-pointer"
+                className="px-5 py-3.5 flex items-center gap-4 group hover:bg-brand-blue/[0.04] transition-colors cursor-pointer"
                 onClick={() => setActiveSetDrawer({
                   projectSetId: ps.id,
                   setId:        ps.set.id,
@@ -1458,7 +1458,7 @@ function CrewSection({
             </p>
           ) : (
             addableMembers.map((m) => (
-              <div key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 border-b border-grey-mid last:border-0 hover:bg-grey-light/40">
+              <div key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 border-b border-grey-mid last:border-0 hover:bg-brand-blue/[0.04]">
                 <div className="min-w-0">
                   <div className="text-[13px] font-medium text-surface-dark truncate">
                     {m.user.displayName ?? m.user.email}

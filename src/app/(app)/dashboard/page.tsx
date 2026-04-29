@@ -520,7 +520,7 @@ function AttentionPanel({ workspaceId }: { workspaceId: string }) {
           <Link
             key={i}
             href={item.href}
-            className="flex items-center gap-3 px-4 py-2.5 hover:bg-grey-light/50 transition-colors group"
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-brand-blue/[0.04] transition-colors group"
           >
             <span className={cn("h-2 w-2 rounded-full flex-shrink-0", s.dot)} />
             <span className={cn("text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border whitespace-nowrap", s.pill)}>
@@ -607,7 +607,7 @@ function ActiveHiresPanel({ workspaceId }: { workspaceId: string }) {
           <Link
             key={r.id}
             href={isPreview ? "#" : `/cross-hire/${r.id}`}
-            className="block px-4 py-3 hover:bg-grey-light/40 transition-colors"
+            className="block px-4 py-3 hover:bg-brand-blue/[0.04] transition-colors"
           >
             <div className="flex items-start justify-between gap-3 mb-1.5">
               <div className="min-w-0 flex-1">
@@ -1028,7 +1028,7 @@ function ProjectsPanel({ workspaceId }: { workspaceId: string }) {
         <Link
           key={p.id}
           href={isPreview ? "#" : `/projects/${p.id}`}
-          className="flex items-center gap-2.5 px-4 py-2 hover:bg-grey-light/50 transition-colors"
+          className="flex items-center gap-2.5 px-4 py-2 hover:bg-brand-blue/[0.04] transition-colors"
         >
           <div className="h-7 w-7 rounded-[6px] bg-grey-light flex items-center justify-center flex-shrink-0">
             <Film className="h-3.5 w-3.5 text-grey" />

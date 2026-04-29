@@ -185,7 +185,7 @@ export default function TeamPage() {
                     const isResending    = resendInvite.isPending && resendInvite.variables?.invitationId === inv.id;
                     const isCancelling   = cancelInvite.isPending && cancelInvite.variables?.invitationId === inv.id;
                     return (
-                      <tr key={inv.id} className="border-b border-grey-mid last:border-b-0 hover:bg-grey-light/70 transition-colors">
+                      <tr key={inv.id} className="border-b border-grey-mid last:border-b-0 hover:bg-brand-blue/[0.04] transition-colors">
                         {/* Member — email only, no avatar */}
                         <td className="px-4 py-3">
                           <div className="text-[13px] font-semibold text-surface-dark truncate">{inv.email}</div>

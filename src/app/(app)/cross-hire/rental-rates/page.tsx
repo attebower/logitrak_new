@@ -145,7 +145,7 @@ export default function RentalRatesPage() {
                 </thead>
                 <tbody className="divide-y divide-grey-mid">
                   {rows.map((row) => (
-                    <tr key={row.id} className="hover:bg-grey-light/30 transition-colors">
+                    <tr key={row.id} className="hover:bg-brand-blue/[0.04] transition-colors">
                       <td className="px-4 py-3 font-medium text-surface-dark">{row.name}</td>
                       <td className="px-4 py-3 text-grey">{row.categoryName ?? "—"}</td>
                       <td className="px-4 py-3 text-right text-surface-dark">{formatRate(row.defaultDailyHireRate)}</td>

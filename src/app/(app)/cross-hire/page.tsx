@@ -155,7 +155,7 @@ export default function CrossHireListPage() {
                       <tr
                         key={event.id}
                         onClick={() => setOpenEventId(event.id)}
-                        className="hover:bg-grey-light/30 transition-colors cursor-pointer"
+                        className="hover:bg-brand-blue/[0.04] transition-colors cursor-pointer"
                       >
                         <td className="px-4 py-3 font-medium text-surface-dark">
                           <div className="flex items-center gap-2 flex-wrap">

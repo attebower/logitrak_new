@@ -375,7 +375,7 @@ export default function CrossHireDetailPage() {
                   {event.equipmentItems.map((item) => {
                     const isReturned = !!item.returnedAt;
                     return (
-                      <tr key={item.id} className={cn("transition-colors", isReturned ? "bg-grey-light/20" : "hover:bg-grey-light/30")}>
+                      <tr key={item.id} className={cn("transition-colors", isReturned ? "bg-grey-light/20" : "hover:bg-brand-blue/[0.04]")}>
                         <td className="px-5 py-2.5 font-mono font-semibold text-surface-dark">{item.equipment.serial}</td>
                         <td className="px-5 py-2.5 text-surface-dark">{item.equipment.name}</td>
                         <td className="px-5 py-2.5 text-grey">{item.equipment.category?.name ?? "—"}</td>

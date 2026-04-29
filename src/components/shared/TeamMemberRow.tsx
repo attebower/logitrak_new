@@ -102,7 +102,7 @@ export function TeamMemberRow({
 
   return (
     <tr className={cn(
-      "border-b border-grey-mid last:border-b-0 hover:bg-grey-light/70 transition-colors",
+      "border-b border-grey-mid last:border-b-0 hover:bg-brand-blue/[0.04] transition-colors",
       member.status === "deactivated" && "opacity-50"
     )}>
       {/* Member (avatar + name + email) */}

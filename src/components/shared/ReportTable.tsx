@@ -173,7 +173,7 @@ export function ReportTable<T extends Record<string, unknown>>({
                   key={(row.id as string) ?? i}
                   onClick={() => onRowClick?.(row)}
                   className={cn(
-                    "border-b border-grey-mid last:border-b-0 transition-colors hover:bg-grey-light/70",
+                    "border-b border-grey-mid last:border-b-0 transition-colors hover:bg-brand-blue/[0.04]",
                     onRowClick && "cursor-pointer"
                   )}
                 >
