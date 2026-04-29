@@ -10,6 +10,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { cn } from "@/lib/utils";
 import { downloadCrossHireInvoicePdf } from "@/lib/pdf/CrossHireInvoicePdf";
 import { downloadCrossHireEquipmentListPdf } from "@/lib/pdf/CrossHireEquipmentListPdf";
+import { toast } from "sonner";
 import {
   ArrowLeft, XCircle, AlertTriangle,
   User, Phone, Mail, MapPin, FileText, ListChecks, Calendar, PoundSterling,
@@ -62,8 +63,10 @@ export default function CrossHireDetailPage() {
       void utils.crossHire["crossHire.list"].invalidate();
       void utils.equipment.list.invalidate();
       void utils.dashboard.stats.invalidate();
+      toast.success("Cross hire deleted, items returned to stock");
       router.push("/cross-hire");
     },
+    onError: (err) => toast.error("Couldn't cancel hire", { description: err.message }),
   });
 
   if (isLoading) {

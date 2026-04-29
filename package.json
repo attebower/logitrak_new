@@ -34,6 +34,7 @@
     "react-email": "^6.0.5",
     "react-qr-barcode-scanner": "^2.1.25",
     "resend": "^6.12.2",
+    "sonner": "^2.0.7",
     "stripe": "^22.0.1",
     "superjson": "^2.2.6",
     "tailwind-merge": "^3.5.0",

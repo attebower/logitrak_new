@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { StatCard, StatGrid } from "@/components/shared/StatCard";
+import { SkeletonRows } from "@/components/shared/SkeletonRows";
 import { CrossHireDetailPanel } from "@/components/shared/CrossHireDetailPanel";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -113,7 +114,7 @@ export default function CrossHireListPage() {
         {/* Table */}
         <div className="bg-white rounded-card border border-grey-mid shadow-card overflow-hidden">
           {isLoading ? (
-            <div className="p-8 text-center text-[13px] text-grey">Loading…</div>
+            <SkeletonRows count={5} />
           ) : !events || events.length === 0 ? (
             <div className="p-12 text-center">
               <Handshake className="h-10 w-10 text-grey mx-auto mb-3" />

@@ -13,6 +13,7 @@
 import Link from "next/link";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { StatCard, StatGrid } from "@/components/shared/StatCard";
+import { SkeletonRows } from "@/components/shared/SkeletonRows";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -165,18 +166,7 @@ function SamplePreview({ message, children }: { message: string; children: React
   );
 }
 
-function SkeletonRows({ count = 4 }: { count?: number }) {
-  return (
-    <div className="divide-y divide-grey-mid">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-5 py-3 animate-pulse">
-          <div className="flex-1 h-3 bg-grey-mid rounded" />
-          <div className="w-16 h-3 bg-grey-mid rounded" />
-        </div>
-      ))}
-    </div>
-  );
-}
+// SkeletonRows now lives in src/components/shared/SkeletonRows.tsx
 
 // ── Sample data (used when a widget has no live data yet) ────────────────
 

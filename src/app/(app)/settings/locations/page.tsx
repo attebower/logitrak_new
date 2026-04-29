@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { SettingsPageShell, SettingsSection } from "@/components/shared/SettingsLayout";
+import { SkeletonRows } from "@/components/shared/SkeletonRows";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -271,7 +272,7 @@ export default function SettingsLocationsPage() {
                 </div>
 
                 {stagesQuery.isLoading ? (
-                  <p className="text-center py-6 text-[12px] text-grey">Loading…</p>
+                  <SkeletonRows count={3} />
                 ) : stages.length === 0 ? (
                   <div className="text-center py-8 text-[12px] text-grey">
                     <Layers size={20} className="mx-auto mb-2 text-grey-mid" />

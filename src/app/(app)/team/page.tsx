@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
 import { TeamMemberRow, TeamTableHead } from "@/components/shared/TeamMemberRow";
@@ -62,16 +63,26 @@ export default function TeamPage() {
   }));
 
   const invite = trpc.team.invite.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       void utils.team.listInvitations.invalidate();
       void utils.team.list.invalidate();
+      toast.success(`Invitation sent to ${vars.email}`);
     },
-    onError: (err) => setActionError(err.message),
+    onError: (err) => {
+      setActionError(err.message);
+      toast.error("Couldn't send invite", { description: err.message });
+    },
   });
 
   const deactivate = trpc.team.deactivateMember.useMutation({
-    onSuccess: () => void utils.team.list.invalidate(),
-    onError:   (err) => setActionError(err.message),
+    onSuccess: () => {
+      void utils.team.list.invalidate();
+      toast.success("Member deactivated");
+    },
+    onError: (err) => {
+      setActionError(err.message);
+      toast.error("Couldn't deactivate member", { description: err.message });
+    },
   });
 
   const cancelInvite = trpc.team.cancelInvite.useMutation({

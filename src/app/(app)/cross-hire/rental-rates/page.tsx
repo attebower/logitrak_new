@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { AppTopbar } from "@/components/shared/AppTopbar";
 import { Button } from "@/components/ui/button";
+import { SkeletonRows } from "@/components/shared/SkeletonRows";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ArrowLeft, History, Pencil, Trash2, X } from "lucide-react";
@@ -124,7 +125,7 @@ export default function RentalRatesPage() {
           </div>
 
           {isLoading ? (
-            <div className="p-8 text-center text-[13px] text-grey">Loading…</div>
+            <SkeletonRows count={5} />
           ) : !rows || rows.length === 0 ? (
             <div className="p-12 text-center">
               <p className="text-[14px] font-medium text-surface-dark mb-1">No products yet</p>
@@ -233,7 +234,7 @@ export default function RentalRatesPage() {
               </button>
             </div>
             {history.isLoading ? (
-              <div className="p-8 text-center text-[13px] text-grey">Loading…</div>
+              <SkeletonRows count={3} />
             ) : !history.data || history.data.length === 0 ? (
               <p className="text-[13px] text-grey py-4">No history recorded for this product yet.</p>
             ) : (

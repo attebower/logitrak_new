@@ -10,6 +10,7 @@
  */
 
 import { redirect } from "next/navigation";
+import { Toaster } from "sonner";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { AppSidebar } from "@/components/shared/AppSidebar";
@@ -119,6 +120,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </main>
           <MobileBottomNav />
         </div>
+        <Toaster
+          position="bottom-right"
+          richColors
+          closeButton
+          toastOptions={{
+            classNames: {
+              toast: "rounded-card border border-grey-mid shadow-card text-[13px]",
+            },
+          }}
+        />
       </WorkspaceProvider>
     </TRPCProvider>
   );

@@ -18,6 +18,7 @@ import {
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import { ImagePlus, Trash2 } from "lucide-react";
 
 const LOGO_BUCKET = "workspace-logos";
@@ -85,8 +86,12 @@ export default function SettingsBusinessPage() {
       setDirty(false);
       setSaveError(null);
       void utils.workspace.getBusinessProfile.invalidate();
+      toast.success("Business profile saved");
     },
-    onError: (err) => setSaveError(err.message),
+    onError: (err) => {
+      setSaveError(err.message);
+      toast.error("Couldn't save business profile", { description: err.message });
+    },
   });
 
   function set<K extends keyof FormState>(k: K, v: FormState[K]) {
