@@ -153,7 +153,11 @@ prisma/
   schema.prisma            # full data model
 scripts/                   # one-off maintenance jobs (idempotent)
 tests/                     # Playwright E2E
+docs/
+  agent-memory/            # portable Claude-agent memory — read before changes
 ```
+
+> **Working with Claude / agents on this codebase?** Read [`docs/agent-memory/`](./docs/agent-memory/) first. It captures decisions, conventions, and the user's explicit "don't do this" feedback so you don't relearn them by trial and error.
 
 ## Branching
 
