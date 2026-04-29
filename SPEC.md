@@ -2,6 +2,17 @@
 
 > Build spec for the **native mobile companion** to the LogiTrak desktop SaaS. The desktop app (`logitrak_new` repo, `dev` branch) is the source of truth for data, billing, settings, and admin work. This phone app lets operators do the on-set jobs without firing up a laptop.
 
+## 0. Scope guardrails (read first)
+
+**This is a brand-new, standalone app.** It is built in its own codebase (new repo or `apps/mobile` workspace) and shipped through the App Store + Play Store separately from the desktop product.
+
+- **Talks to the existing desktop backend over the network.** It uses the same tRPC API, the same Supabase Auth, the same database. No fork, no parallel backend.
+- **Does not modify the desktop app.** The phone-app build agent must not edit anything in the existing Next.js codebase. If a new server endpoint is needed (see §12 — `dashboard.projectStats`, `push.registerToken`, attachment uploads), that's a coordinated change for the desktop session — request it, don't ship it from the mobile build.
+- **Does not duplicate desktop logic.** Reuse existing endpoints wherever possible. The phone is a thin client; business rules live on the server.
+- **Does not own admin / settings / billing / cross-hire screens.** Those are desktop-only by design (see §4).
+
+If something can't be done without touching the desktop, **stop and flag it for the desktop team** rather than reaching into that codebase.
+
 ---
 
 ## 1. Goal
@@ -52,12 +63,11 @@ The first screen after sign in. Shows a project picker at the top (the user's `P
 
 - **Items checked out** to this project.
 - **Items damaged** in the last 7 days on this project.
-- **Recent activity** (last 10 events) on this project.
+- **Recent activity** (last 10 events) on this project — all users.
 - **Sets covered** vs total sets on this project.
+- **My recent scans** — the *current user's* last 10 issue/return events on this project. Lets the operator answer "what did I just do" without scrolling the all-user activity feed.
 
-> **(NEEDS ANSWER)** Anything else operators want to glance at?
-
-A new tRPC endpoint is needed: `dashboard.projectStats({ workspaceId, projectId })`. It mirrors the existing `dashboard.stats` but filters by project membership.
+A new tRPC endpoint is needed: `dashboard.projectStats({ workspaceId, projectId })`. It mirrors the existing `dashboard.stats` but filters by project membership and includes both the all-user recent-activity list and a separate `myRecentScans` list (filtered by `actorId === ctx.session.user.id`).
 
 ### 3.3 Issue
 Same flow as desktop `/issue`:
@@ -89,12 +99,17 @@ Reuses `equipment.getDetail` on the existing tRPC API.
 ### 3.6 Projects section
 Lists only the projects the operator is a member of (server filters by `ProjectMembership` for non-admins). Tapping a project drills into:
 
-- Project meta (name, type, status, dates, notes).
-- Sets list (existing project sets).
-- Crew list (other members of this project).
-- Equipment currently issued to this project.
+- Project meta (name, type, status, dates, notes) — **read-only**.
+- Sets list (existing project sets) — **read-only** (no add/remove/edit on phone).
+- Crew list (other members of this project) — **read-only**.
+- Equipment currently issued to this project — **read-only**.
 
-> **(NEEDS ANSWER)** Confirm read-only on phone, or do operators need to add/edit sets here? Recommend **read-only v1**.
+**Two write exceptions on a Set:**
+
+- **Upload set photos & drawings.** Operators can attach images (camera roll or live capture) and PDFs/drawings to a set from the phone. Persist to Supabase Storage (new bucket `set-attachments`, public-within-workspace). Endpoints: `project.sets.uploadAttachment` and the existing setPhotos schema.
+- **View set snapshots.** Show every saved snapshot for the set, ordered newest first. Tap one to view the full PDF/render. The data already exists (`SetSnapshot` rows on the workspace); the phone just needs a list-and-view UI.
+
+**Desktop TODO (out of phone-app scope but related):** the desktop project detail page should also show the **full history of saved set snapshots** for a set — all versions, with timestamps and who saved each one. Currently snapshots are generated and saved but there's no list view to browse them. Logged in §4 of the desktop spec / next-session todos.
 
 ## 4. Out of scope (NOT on the phone)
 
@@ -115,11 +130,11 @@ The desktop spec defines what events trigger push (overdue cross hire, damage re
 Build requirements:
 
 - Register the device with APNs (iOS) / FCM (Android) on first sign-in. Persist the token on the user / workspace.
-- A new tRPC endpoint: `push.registerToken({ token, platform })` and `push.unregisterToken({ token })`.
+- A new tRPC endpoint: `push.registerToken({ token, platform })` and `push.unregisterToken({ token })`. The token stored is the **Expo push token** (`ExponentPushToken[xxxx]`), not raw APNs/FCM.
 - Tap a notification → deep link into the relevant screen (e.g. damage notification opens equipment detail; overdue cross hire opens cross hire detail *on the desktop web URL*, since cross hire is desktop-only).
 - Quiet hours / per-event opt-out toggles in the phone's Settings screen.
 
-> **(NEEDS ANSWER)** Push provider: raw APNs+FCM via Expo Notifications, or OneSignal / Firebase Cloud Messaging directly?
+**Provider: Expo Notifications.** Server-side a small helper sends batches via Expo's HTTP API (`https://exp.host/--/api/v2/push/send`) — no APNs / FCM credentials to manage on our side. Add a `PushDeviceToken` table joining tokens to users, and a `sendExpoPush(tokens, payload)` helper in `src/lib/push/`.
 
 ## 6. Offline behaviour
 
@@ -128,9 +143,7 @@ Build requirements:
 ## 7. Hardware
 
 - **Camera scanner** — primary. Use the platform's barcode SDK (VisionKit on iOS, ML Kit on Android via Expo / RN modules) for QR + Code 128 + Code 39.
-- **Bluetooth handheld scanner** — secondary. Treats keyboard-emulating scanners (Socket / Zebra etc.) as text input into the focused field — works the same as the desktop scan input.
-
-> **(NEEDS ANSWER)** Any specific scanner hardware to test against (Socket S700 / Zebra MC2200 / etc.)?
+- **Bluetooth handheld scanner** — secondary. Generic HID support only — any scanner that pairs as a Bluetooth keyboard and types the serial into the focused field works. No vendor-specific SDKs (no Socket / Zebra / Honeywell SDK integrations). If the device acts as a keyboard, it works.
 
 ## 8. Auth, sessions, deep links
 
@@ -161,11 +174,26 @@ The phone respects the same workspace-level caps as the desktop (Free 1 user / 2
 ## 11. Open questions for the build agent
 
 1. ~~**Stack**~~ ✅ Decided — React Native (Expo).
-2. **Push provider**: Expo Notifications, OneSignal, or direct APNs/FCM?
-3. **Project-dashboard KPIs**: are the four listed enough, or anything missing?
-4. **Projects section**: read-only v1 confirmed?
-5. **Specific scanner hardware** to test against?
-6. **App-store metadata**: name, icon, screenshots — separate task or deliver alongside?
+2. ~~**Push provider**~~ ✅ Decided — Expo Notifications.
+3. ~~**Project-dashboard KPIs**~~ ✅ Decided — items checked out, damaged (7d), recent activity, sets covered, my recent scans.
+4. ~~**Projects section**~~ ✅ Decided — read-only, except set-photo/drawing uploads and viewing saved set snapshots.
+5. ~~**Specific scanner hardware**~~ ✅ Decided — generic HID, no vendor SDKs.
+6. ~~**App-store metadata**~~ ✅ Decided — build agent owns it with placeholders to unblock TestFlight; polished assets swapped in later.
+
+### App-store metadata responsibilities (build agent)
+
+The build agent ships the following alongside the .ipa/.aab so TestFlight + Play Internal Testing work day one. Polished assets get replaced before public launch.
+
+- **App icon** — 1024×1024 PNG (placeholder allowed; just the LogiTrak wordmark on brand-blue is fine).
+- **Splash screen** — brand colour + wordmark.
+- **Screenshots** — at least one per required device size (iPhone 6.7" + 6.1"; Android phone). Use a TestFlight build of the dashboard or a scan flow.
+- **Short description** — one sentence: *"Track every piece of kit on your production — issue, return, scan."*
+- **Full description** — placeholder paragraph describing the operator workflow; final copy provided later.
+- **Keywords** — film, equipment, tracking, rental, production, scanner, qr, barcode.
+- **Privacy policy URL** — live web page (build agent can stub a `/privacy` route on the desktop site if it doesn't exist).
+- **Support URL** — `https://logitrak.app/support` or similar; can be a stub mailto-style page initially.
+- **App name / subtitle / category** — *LogiTrak* / *Production kit tracking* / *Productivity* (Apple) + *Productivity* (Google).
+- **Apple Developer account ($99/yr)** + **Google Play Developer ($25 one-off)** — opening these accounts is the user's job (requires legal entity + tax info), not the build agent's. Build agent uses provided credentials.
 
 ## 12. Reference: shared backend
 
@@ -201,3 +229,11 @@ Production launch (App Store + Play Store live) is a separate gate — needs mar
 ---
 
 *This spec is purpose-built for a fresh agent picking up the phone-app build. The desktop product is documented in the repo's `README.md` and the `~/.claude/projects/.../memory/` files (`project_cross_hire_status.md`, `project_invite_flow_plan.md`, `project_roles_access_model.md`) — read those for context but don't try to modify the desktop from this build.*
+
+---
+
+## Appendix: desktop-side TODOs that came up during this spec
+
+These are *not* phone-app work — they're things to log for the desktop session.
+
+- **Set snapshot history view** in the desktop project detail page. Currently snapshots can be saved but there's no UI to list every version saved for a given set with timestamps + who saved each. Phone reads this same data (§3.6), so the schema and any new query endpoint should be designed to serve both surfaces.
