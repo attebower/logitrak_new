@@ -19,13 +19,14 @@ import { Button } from "@/components/ui/button";
 import { TeamMemberRow, TeamTableHead } from "@/components/shared/TeamMemberRow";
 import { RoleBadge } from "@/components/shared/RoleBadge";
 import { InviteModal, type ProjectOption } from "@/components/shared/InviteModal";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { cn } from "@/lib/utils";
 import type { TeamMember } from "@/components/shared/TeamMemberRow";
 import type { WorkspaceRole } from "@/components/shared/RoleBadge";
 import type { PendingInvite } from "@/components/shared/InviteModal";
-import { X, Plus } from "lucide-react";
+import { X, Plus, Users } from "lucide-react";
 
 function mapRole(r: string): WorkspaceRole {
   if (r === "read_only") return "read-only";
@@ -138,16 +139,23 @@ export default function TeamPage() {
         )}
 
         <div className="bg-white rounded-card border border-grey-mid shadow-card overflow-hidden">
+          {memberRows.length === 0 && pendingInvites.length === 0 ? (
+            <EmptyState
+              icon={<Users className="h-6 w-6" />}
+              title="No team members yet"
+              description="Invite admins to manage the workspace, or add users to specific projects."
+              action={isAdmin ? (
+                <Button size="sm" onClick={() => setShowInvite(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Invite member
+                </Button>
+              ) : null}
+            />
+          ) : (
           <table className="w-full">
             <TeamTableHead />
             <tbody>
-              {memberRows.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-[13px] text-grey">
-                    No team members yet.
-                  </td>
-                </tr>
-              ) : (
+              {memberRows.length === 0 ? null : (
                 memberRows.map((member) => {
                   const raw = members?.find((m) => m.id === member.id);
                   const isWorkspaceAdmin = raw?.role === "owner" || raw?.role === "admin";
@@ -256,6 +264,7 @@ export default function TeamPage() {
               )}
             </tbody>
           </table>
+          )}
         </div>
       </div>
 
