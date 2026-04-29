@@ -11,42 +11,38 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      // ── Colour tokens are CSS-variable-backed so they flip in dark mode.
-      // Light values are defined in src/app/globals.css under :root, dark
-      // values under .dark. Existing class names (bg-brand-blue, text-grey,
-      // etc.) keep working unchanged.
       colors: {
         brand: {
-          blue:           "rgb(var(--brand-blue) / <alpha-value>)",
-          "blue-hover":   "rgb(var(--brand-blue-hover) / <alpha-value>)",
-          "blue-light":   "rgb(var(--brand-blue-light) / <alpha-value>)",
-          "blue-mid":     "rgb(var(--brand-blue-mid) / <alpha-value>)",
+          blue:           "#1B4FD8",
+          "blue-hover":   "#1741B3",
+          "blue-light":   "#EFF6FF",
+          "blue-mid":     "#DBEAFE",
         },
         surface: {
-          DEFAULT: "rgb(var(--surface) / <alpha-value>)",
-          dark:    "rgb(var(--surface-dark) / <alpha-value>)",
-          dark2:   "rgb(var(--surface-dark2) / <alpha-value>)",
-          dark3:   "rgb(var(--surface-dark3) / <alpha-value>)",
+          dark:  "#0F172A",
+          dark2: "#1E293B",
+          dark3: "#334155",
         },
         status: {
-          green:          "rgb(var(--status-green) / <alpha-value>)",
-          "green-light":  "rgb(var(--status-green-light) / <alpha-value>)",
-          amber:          "rgb(var(--status-amber) / <alpha-value>)",
-          "amber-light":  "rgb(var(--status-amber-light) / <alpha-value>)",
-          red:            "rgb(var(--status-red) / <alpha-value>)",
-          "red-light":    "rgb(var(--status-red-light) / <alpha-value>)",
-          teal:           "rgb(var(--status-teal) / <alpha-value>)",
-          "teal-light":   "rgb(var(--status-teal-light) / <alpha-value>)",
-          orange:         "rgb(var(--status-orange) / <alpha-value>)",
-          "orange-light": "rgb(var(--status-orange-light) / <alpha-value>)",
+          green:          "#16A34A",
+          "green-light":  "#DCFCE7",
+          amber:          "#D97706",
+          "amber-light":  "#FEF3C7",
+          red:            "#DC2626",
+          "red-light":    "#FEE2E2",
+          teal:           "#0D9488",
+          "teal-light":   "#CCFBF1",
+          // Under Repair — orange
+          orange:         "#EA580C",
+          "orange-light": "#FFF7ED",
         },
         grey: {
-          DEFAULT: "rgb(var(--grey) / <alpha-value>)",
-          light:   "rgb(var(--grey-light) / <alpha-value>)",
-          mid:     "rgb(var(--grey-mid) / <alpha-value>)",
+          DEFAULT: "#64748B",
+          light:   "#F8FAFC",
+          mid:     "#E2E8F0",
         },
         slate: {
-          muted: "rgb(var(--slate-muted) / <alpha-value>)",
+          muted: "#475569",
         },
       },
       fontSize: {

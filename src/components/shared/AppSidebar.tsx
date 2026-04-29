@@ -12,7 +12,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
 export interface NavItem {
   label: string;
@@ -97,11 +96,6 @@ export function AppSidebar({
           </div>
         ))}
       </nav>
-
-      {/* ── Theme toggle ── */}
-      <div className="px-5 py-3 border-t border-white/[0.06]">
-        <ThemeToggle />
-      </div>
 
       {/* ── User footer ── */}
       <div className="px-5 py-3 border-t border-white/[0.06]">
