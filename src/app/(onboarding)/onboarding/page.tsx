@@ -1,20 +1,25 @@
 "use client";
 
 /**
- * Onboarding wizard — 3 steps.
+ * Onboarding wizard — 5 steps.
  *
- * Step 1: Your Profile   → trpc.user.updateProfile
- * Step 2: Invite Team    → trpc.team.invite per row (skippable)
- * Step 3: All set!       → go to dashboard
+ * Step 1: Your Profile     → trpc.user.updateProfile (name + department only)
+ * Step 2: Your Business    → trpc.workspace.create with full business profile
+ * Step 3: Choose Plan      → trpc.workspace.update (subscriptionTier)
+ * Step 4: Invite Team      → trpc.team.invite per row, with Admin/User scope
+ * Step 5: All set!         → go to dashboard
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Plus, X, Check } from "lucide-react";
+import { CheckCircle2, Plus, X, Check, ImagePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
+import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 
-const STEPS = ["Your Profile", "Choose Plan", "Invite Team", "All Set"] as const;
+const STEPS = ["Profile", "Business", "Plan", "Invite", "Done"] as const;
 
 type Tier = "starter" | "professional" | "enterprise";
 
@@ -51,143 +56,193 @@ const PLANS: Array<{
 ];
 
 const DEPARTMENT_OPTIONS = [
-  "Lighting",
-  "Camera",
-  "Grip",
-  "Props",
-  "Art Direction",
-  "Sound",
-  "Costume",
-  "Make-Up & Hair",
-  "Stunts",
-  "Visual Effects",
-  "Production",
-  "Locations",
-  "Transport",
-  "Catering",
-  "Medical",
-  "Security",
-  "Other",
+  "Lighting", "Camera", "Grip", "Props", "Art Direction",
+  "Sound", "Costume", "Make-Up & Hair", "Stunts", "Visual Effects",
+  "Production", "Locations", "Transport", "Catering", "Medical", "Security", "Other",
 ] as const;
+
+const LOGO_BUCKET = "workspace-logos";
 
 interface InviteRow {
   fullName: string;
-  nickname: string;
-  email: string;
+  email:    string;
+  scope:    "admin" | "user";
 }
+
+const inputCls = "w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue placeholder:text-slate-400";
+
+// ── Step indicator ────────────────────────────────────────────────────────
 
 function StepIndicator({ current }: { current: number }) {
   return (
-    <div className="flex items-center gap-0 mb-8">
+    <div className="flex items-center justify-center gap-6 mb-8 flex-wrap">
       {STEPS.map((label, i) => (
-        <div key={label} className="flex items-center flex-1 last:flex-none">
-          <div className="flex items-center gap-2 shrink-0">
-            <div
-              className={[
-                "w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold transition-colors",
-                i < current
-                  ? "bg-brand-blue text-white"
-                  : i === current
-                  ? "bg-brand-blue text-white ring-2 ring-brand-blue ring-offset-2 ring-offset-grey-light"
-                  : "bg-white border border-grey-mid text-slate-400",
-              ].join(" ")}
-            >
-              {i < current ? "✓" : i + 1}
-            </div>
-            <span
-              className={[
-                "text-[12px] font-semibold hidden sm:block",
-                i === current ? "text-surface-dark" : "text-slate-400",
-              ].join(" ")}
-            >
-              {label}
-            </span>
+        <div key={label} className="flex items-center gap-2">
+          <div className={cn(
+            "w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold transition-colors",
+            i < current
+              ? "bg-brand-blue text-white"
+              : i === current
+              ? "bg-brand-blue text-white ring-2 ring-brand-blue ring-offset-2 ring-offset-grey-light"
+              : "bg-white border border-grey-mid text-slate-400"
+          )}>
+            {i < current ? <Check size={13} /> : i + 1}
           </div>
-          {i < STEPS.length - 1 && (
-            <div
-              className={`flex-1 h-px mx-3 transition-colors ${
-                i < current ? "bg-brand-blue" : "bg-grey-mid"
-              }`}
-            />
-          )}
+          <span className={cn(
+            "text-[12px] font-semibold whitespace-nowrap hidden sm:block",
+            i === current ? "text-surface-dark" : "text-slate-400"
+          )}>
+            {label}
+          </span>
         </div>
       ))}
     </div>
   );
 }
 
-const inputCls =
-  "w-full border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue placeholder:text-slate-400";
+// ── Page ──────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
   const router = useRouter();
 
-  // ── Step 1 state ──
   const [step, setStep] = useState(0);
-  const [companyName, setCompanyName] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [nickname, setNickname] = useState("");
+
+  // Step 1 — Profile
+  const [fullName,   setFullName]   = useState("");
   const [department, setDepartment] = useState("");
-  const [subDepartment, setSubDepartment] = useState("");
   const [step1Error, setStep1Error] = useState<string | null>(null);
 
-  // ── Step 2 state — plan selection ──
+  // Step 2 — Business
+  const [businessName,  setBusinessName]  = useState("");
+  const [addressLine1,  setAddressLine1]  = useState("");
+  const [addressLine2,  setAddressLine2]  = useState("");
+  const [city,          setCity]          = useState("");
+  const [county,        setCounty]        = useState("");
+  const [postcode,      setPostcode]      = useState("");
+  const [country,       setCountry]       = useState("United Kingdom");
+  const [vatNumber,     setVatNumber]     = useState("");
+  const [businessEmail, setBusinessEmail] = useState("");
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [bankDetails,   setBankDetails]   = useState("");
+  const [logoUrl,       setLogoUrl]       = useState("");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError,     setLogoError]     = useState<string | null>(null);
+  const [step2Error,    setStep2Error]    = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Step 3 — Plan
   const [selectedTier, setSelectedTier] = useState<Tier>("professional");
-  const [planError, setPlanError] = useState<string | null>(null);
+  const [planError,    setPlanError]    = useState<string | null>(null);
 
-  // ── Step 3 state (was step 2) ──
-  const [rows, setRows] = useState<InviteRow[]>([{ fullName: "", nickname: "", email: "" }]);
+  // Step 4 — Invite
+  const [rows, setRows] = useState<InviteRow[]>([{ fullName: "", email: "", scope: "admin" }]);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [inviting, setInviting] = useState(false);
+  const [inviting,    setInviting]    = useState(false);
 
-  // ── Derived first name for personalisation ──
   const firstName = fullName.trim().split(" ")[0] ?? "";
 
-  // ── Mutations ──
+  // Mutations
   const updateProfile   = trpc.user.updateProfile.useMutation();
   const createWorkspace = trpc.workspace.create.useMutation();
   const updateWorkspace = trpc.workspace.update.useMutation();
-  const userMe = trpc.user.me.useQuery();
-  const teamInvite = trpc.team.invite.useMutation();
+  const updateBusiness  = trpc.workspace.updateBusinessProfile.useMutation();
+  const userMe          = trpc.user.me.useQuery();
+  const teamInvite      = trpc.team.invite.useMutation();
 
-  // ── Step handlers ──
+  // ── Step handlers ──────────────────────────────────────────────────────
 
   async function handleStep1() {
     setStep1Error(null);
-    if (!companyName.trim()) { setStep1Error("Organisation / company name is required."); return; }
-    if (!fullName.trim())    { setStep1Error("Full name is required."); return; }
-    if (!department)         { setStep1Error("Please select a department."); return; }
+    if (!fullName.trim()) { setStep1Error("Full name is required."); return; }
+    if (!department)      { setStep1Error("Please select a department."); return; }
 
     try {
       await updateProfile.mutateAsync({
-        fullName: fullName.trim(),
-        displayName: nickname.trim() || fullName.trim().split(" ")[0],
-        ...(nickname.trim() && { nickname: nickname.trim() }),
+        fullName:    fullName.trim(),
+        displayName: fullName.trim().split(" ")[0],
         department,
-        ...(subDepartment.trim() && { subDepartment: subDepartment.trim() }),
       });
-
-      const existingWorkspaceId = userMe.data?.workspace?.id;
-      if (existingWorkspaceId) {
-        await updateWorkspace.mutateAsync({
-          workspaceId: existingWorkspaceId,
-          name: companyName.trim(),
-          department,
-        });
-      } else {
-        await createWorkspace.mutateAsync({
-          name: companyName.trim(),
-          industryType: "film_tv",
-          department,
-          // Default workspace starts on starter; updated after plan selection in step 2.
-          subscriptionTier: "starter",
-        });
-      }
-
-      await userMe.refetch();
+      // Pre-fill businessName guess from the user's full name if empty.
+      // (They'll overwrite it with the legal name on the next step.)
       setStep(1);
     } catch (err: unknown) {
       setStep1Error(err instanceof Error ? err.message : "Something went wrong.");
+    }
+  }
+
+  async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setLogoError("Please pick an image file."); return; }
+    if (file.size > 2 * 1024 * 1024)     { setLogoError("Image too large — keep it under 2 MB."); return; }
+    setLogoError(null);
+    setLogoUploading(true);
+    try {
+      const supabase = createClient();
+      const ext  = file.name.split(".").pop()?.toLowerCase() ?? "png";
+      const path = `onboarding/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from(LOGO_BUCKET)
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path);
+      setLogoUrl(pub.publicUrl);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setLogoError(msg.includes("Bucket not found")
+        ? `Supabase bucket "${LOGO_BUCKET}" not configured yet. You can skip this and add a logo later in Settings.`
+        : msg);
+    } finally {
+      setLogoUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function handleStep2() {
+    setStep2Error(null);
+    if (!businessName.trim()) { setStep2Error("Legal / trading name is required."); return; }
+
+    const payload = {
+      businessName:  businessName.trim() || null,
+      addressLine1:  addressLine1.trim() || null,
+      addressLine2:  addressLine2.trim() || null,
+      city:          city.trim()         || null,
+      county:        county.trim()       || null,
+      postcode:      postcode.trim()     || null,
+      country:       country.trim()      || null,
+      vatNumber:     vatNumber.trim()    || null,
+      businessEmail: businessEmail.trim()|| null,
+      businessPhone: businessPhone.trim()|| null,
+      bankDetails:   bankDetails.trim()  || null,
+      logoUrl:       logoUrl             || null,
+    };
+
+    try {
+      const existingWorkspaceId = userMe.data?.workspace?.id;
+      if (existingWorkspaceId) {
+        // Workspace already exists (re-running onboarding). Update name + business fields.
+        await updateWorkspace.mutateAsync({
+          workspaceId: existingWorkspaceId,
+          name:        businessName.trim(),
+          department,
+        });
+        await updateBusiness.mutateAsync({
+          workspaceId: existingWorkspaceId,
+          ...payload,
+        });
+      } else {
+        await createWorkspace.mutateAsync({
+          name:             businessName.trim(),
+          industryType:     "film_tv",
+          department,
+          subscriptionTier: "starter",
+          ...payload,
+        });
+      }
+      await userMe.refetch();
+      setStep(2);
+    } catch (err: unknown) {
+      setStep2Error(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
@@ -196,134 +251,86 @@ export default function OnboardingPage() {
     const workspaceId = userMe.data?.workspace?.id;
     if (!workspaceId) { setPlanError("Could not resolve workspace. Please refresh."); return; }
     try {
-      await updateWorkspace.mutateAsync({
-        workspaceId,
-        subscriptionTier: selectedTier,
-      });
-      setStep(2);
+      await updateWorkspace.mutateAsync({ workspaceId, subscriptionTier: selectedTier });
+      setStep(3);
     } catch (err: unknown) {
       setPlanError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
-  function addRow() {
-    setRows((r) => [...r, { fullName: "", nickname: "", email: "" }]);
-  }
-
-  function removeRow(i: number) {
-    setRows((r) => r.filter((_, j) => j !== i));
-  }
-
-  function updateRow(i: number, field: keyof InviteRow, value: string) {
+  function addRow() { setRows((r) => [...r, { fullName: "", email: "", scope: "admin" }]); }
+  function removeRow(i: number) { setRows((r) => r.filter((_, j) => j !== i)); }
+  function updateRow<K extends keyof InviteRow>(i: number, field: K, value: InviteRow[K]) {
     setRows((r) => r.map((row, j) => (j === i ? { ...row, [field]: value } : row)));
   }
 
   async function handleInviteStep() {
     setInviteError(null);
+    const workspaceId = userMe.data?.workspace?.id;
+    if (!workspaceId) { setInviteError("Could not resolve workspace. Please refresh."); return; }
 
     const filled = rows.filter((r) => r.email.trim());
-    if (filled.length === 0) { setStep(3); return; }
+    if (filled.length === 0) { setStep(4); return; }
 
     for (const row of filled) {
       if (!row.email.includes("@")) {
-        setInviteError(`"${row.email}" is not a valid email address.`);
+        setInviteError(`"${row.email}" doesn't look like a valid email.`);
         return;
       }
     }
 
-    const workspaceId = userMe.data?.workspace?.id;
-    if (!workspaceId) {
-      setInviteError("Could not resolve workspace. Please refresh and try again.");
-      return;
-    }
-
     setInviting(true);
-    const failed: string[] = [];
-    for (const row of filled) {
-      try {
+    try {
+      for (const row of filled) {
         await teamInvite.mutateAsync({
           workspaceId,
-          email: row.email.trim(),
-          role: "operator",
-          ...(row.nickname.trim() && { nickname: row.nickname.trim() }),
+          email:      row.email.trim().toLowerCase(),
+          role:       row.scope === "admin" ? "admin" : "operator",
+          projectIds: [], // No projects exist yet at onboarding
+          ...(row.fullName.trim() && { nickname: row.fullName.trim() }),
         });
-      } catch {
-        failed.push(row.email.trim());
       }
+      setStep(4);
+    } catch (err: unknown) {
+      setInviteError(err instanceof Error ? err.message : "Failed to send some invites.");
+    } finally {
+      setInviting(false);
     }
-    setInviting(false);
-    if (failed.length) {
-      setInviteError(`Failed to invite: ${failed.join(", ")}`);
-    }
-    setStep(3);
   }
 
-  // ── Render ──
+  // Cleanup the local file input
+  useEffect(() => () => { if (fileRef.current) fileRef.current.value = ""; }, []);
 
-  const cardWidthCls = step === 1 ? "max-w-5xl" : "max-w-lg";
+  // ── Render ─────────────────────────────────────────────────────────────
+
+  const cardWidthCls = step === 2 ? "max-w-5xl" : "max-w-lg";
 
   return (
     <div className="flex-1 overflow-y-auto flex items-center justify-center p-6 min-h-0">
-      <div className={`w-full ${cardWidthCls}`}>
+      <div className={cn("w-full", cardWidthCls)}>
         <StepIndicator current={step} />
 
-        {/* Card */}
         <div className="bg-white rounded-panel border border-grey-mid p-8 shadow-sm">
 
-          {/* ── Step 1: Your Profile ── */}
+          {/* ── Step 1 — Profile ── */}
           {step === 0 && (
             <>
               <h1 className="text-[20px] font-bold text-surface-dark mb-1">Let&apos;s get you set up</h1>
-              <p className="text-[13px] text-slate-500 mb-6">
-                Tell us a bit about yourself so we can personalise LogiTrak for your workflow.
-              </p>
+              <p className="text-[13px] text-slate-500 mb-6">A bit about you so we can personalise LogiTrak.</p>
 
               <div className="space-y-4">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Organisation / Company Name <span className="text-status-red">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="e.g. Northbound Film Services Ltd"
-                    className={inputCls}
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Full Name <span className="text-status-red">*</span>
-                  </label>
+                <Field label="Full name" required>
                   <input
                     type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="e.g. Jamie Wilson"
                     className={inputCls}
+                    autoFocus
                   />
-                </div>
+                </Field>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Nickname
-                    <span className="ml-1.5 text-[10px] font-normal normal-case text-slate-400">What your crew calls you</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    placeholder="e.g. JW, Sparky"
-                    className={inputCls}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Department <span className="text-status-red">*</span>
-                  </label>
+                <Field label="Department" required>
                   <select
                     value={department}
                     onChange={(e) => setDepartment(e.target.value)}
@@ -334,54 +341,147 @@ export default function OnboardingPage() {
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
-                </div>
+                </Field>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Sub-department
-                  </label>
-                  <input
-                    type="text"
-                    value={subDepartment}
-                    onChange={(e) => setSubDepartment(e.target.value)}
-                    placeholder="e.g. Rigging, Electrics, Camera Trainee"
-                    className={inputCls}
-                  />
-                </div>
-
-                {step1Error && (
-                  <p className="text-[12px] text-status-red">{step1Error}</p>
-                )}
+                {step1Error && <p className="text-[12px] text-status-red">{step1Error}</p>}
               </div>
-
-              <p className="mt-5 text-[11px] text-slate-400">
-                You&apos;ll be set as the workspace admin — this can be changed at any time.
-              </p>
 
               <div className="flex justify-end mt-6">
                 <Button
-                  variant="primary"
-                  disabled={!companyName.trim() || !fullName.trim() || !department || updateProfile.isPending || createWorkspace.isPending || updateWorkspace.isPending}
+                  size="lg"
                   onClick={handleStep1}
+                  disabled={updateProfile.isPending}
                 >
-                  {(updateProfile.isPending || createWorkspace.isPending || updateWorkspace.isPending) ? "Saving…" : "Continue"}
+                  {updateProfile.isPending ? "Saving…" : "Continue"}
                 </Button>
               </div>
             </>
           )}
 
-          {/* ── Step 2: Choose Plan ── */}
+          {/* ── Step 2 — Business ── */}
           {step === 1 && (
             <>
-              <h1 className="text-[20px] font-bold text-surface-dark mb-1">Choose your plan</h1>
-              <p className="text-[13px] text-slate-500 mb-2">
-                Start with a <span className="font-semibold text-brand-blue">7-day free trial</span> on any plan. No credit card required.
-              </p>
-              <p className="text-[12px] text-slate-400 mb-6">
-                You can switch plans any time from Settings → Billing.
+              <h1 className="text-[20px] font-bold text-surface-dark mb-1">About your business</h1>
+              <p className="text-[13px] text-slate-500 mb-6">
+                These details appear on your cross-hire invoices and equipment list PDFs.
+                Only the legal/trading name is required — fill in the rest now or later from Settings.
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-5">
+                {/* Logo */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Logo <span className="font-normal normal-case text-slate-400">(optional)</span>
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <div className="h-16 w-16 rounded-card border border-grey-mid bg-grey-light/40 overflow-hidden flex items-center justify-center shrink-0">
+                      {logoUrl ? (
+                        <Image src={logoUrl} alt="Logo" width={64} height={64} className="object-contain h-full w-full" unoptimized />
+                      ) : (
+                        <ImagePlus className="h-5 w-5 text-grey" />
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="secondary" disabled={logoUploading} onClick={() => fileRef.current?.click()}>
+                          {logoUploading ? "Uploading…" : logoUrl ? "Replace" : "Upload"}
+                        </Button>
+                        {logoUrl && (
+                          <Button size="sm" variant="ghost" onClick={() => setLogoUrl("")}>
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />Remove
+                          </Button>
+                        )}
+                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+                      </div>
+                      {logoError && <p className="text-[11px] text-status-red">{logoError}</p>}
+                      <p className="text-[11px] text-slate-400">PNG/JPG/SVG, under 2 MB.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <Field label="Legal / trading name" required>
+                  <input
+                    type="text"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    placeholder="e.g. Northbound Film Services Ltd"
+                    className={inputCls}
+                    autoFocus
+                  />
+                </Field>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="VAT number">
+                    <input type="text" value={vatNumber} onChange={(e) => setVatNumber(e.target.value)} placeholder="GB123456789" className={inputCls} />
+                  </Field>
+                  <Field label="Business email">
+                    <input type="email" value={businessEmail} onChange={(e) => setBusinessEmail(e.target.value)} placeholder="hello@yourcompany.com" className={inputCls} />
+                  </Field>
+                  <Field label="Business phone">
+                    <input type="tel" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} className={inputCls} />
+                  </Field>
+                </div>
+
+                <div className="border-t border-grey-mid pt-4">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Address (optional)</p>
+                  <div className="space-y-3">
+                    <input
+                      type="text" placeholder="Address line 1"
+                      value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)}
+                      className={inputCls}
+                    />
+                    <input
+                      type="text" placeholder="Address line 2"
+                      value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)}
+                      className={inputCls}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input type="text" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} className={inputCls} />
+                      <input type="text" placeholder="County" value={county} onChange={(e) => setCounty(e.target.value)} className={inputCls} />
+                      <input type="text" placeholder="Postcode" value={postcode} onChange={(e) => setPostcode(e.target.value)} className={inputCls} />
+                      <input type="text" placeholder="Country" value={country} onChange={(e) => setCountry(e.target.value)} className={inputCls} />
+                    </div>
+                  </div>
+                </div>
+
+                <Field label="Bank details for invoices" optional>
+                  <textarea
+                    rows={3}
+                    value={bankDetails}
+                    onChange={(e) => setBankDetails(e.target.value)}
+                    placeholder={"Bank: Barclays\nAccount: 12345678\nSort code: 12-34-56"}
+                    className={cn(inputCls, "resize-none")}
+                  />
+                </Field>
+
+                {step2Error && <p className="text-[12px] text-status-red">{step2Error}</p>}
+              </div>
+
+              <div className="flex items-center justify-between mt-6">
+                <button
+                  onClick={() => setStep(0)}
+                  className="text-[12px] text-slate-400 hover:text-surface-dark"
+                >
+                  Back
+                </button>
+                <Button
+                  size="lg"
+                  onClick={handleStep2}
+                  disabled={createWorkspace.isPending || updateWorkspace.isPending || updateBusiness.isPending}
+                >
+                  {(createWorkspace.isPending || updateWorkspace.isPending || updateBusiness.isPending) ? "Saving…" : "Continue"}
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* ── Step 3 — Plan ── */}
+          {step === 2 && (
+            <>
+              <h1 className="text-[22px] font-bold text-surface-dark mb-1">Choose your plan</h1>
+              <p className="text-[13px] text-slate-500 mb-6">7-day trial — no card needed up front.</p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {PLANS.map((plan) => {
                   const isSelected = selectedTier === plan.id;
                   return (
@@ -389,40 +489,30 @@ export default function OnboardingPage() {
                       key={plan.id}
                       type="button"
                       onClick={() => setSelectedTier(plan.id)}
-                      className={[
-                        "relative text-left rounded-panel border-2 p-5 transition-all",
-                        isSelected
-                          ? "border-brand-blue bg-brand-blue-light/40 shadow-[0_0_0_4px_rgba(27,79,216,0.08)]"
-                          : plan.highlight
-                          ? "border-brand-blue/30 bg-white hover:border-brand-blue/60"
-                          : "border-grey-mid bg-white hover:border-grey",
-                      ].join(" ")}
+                      className={cn(
+                        "text-left rounded-panel border-2 p-5 transition-all relative",
+                        isSelected ? "border-brand-blue bg-brand-blue/5" : "border-grey-mid bg-white hover:border-grey",
+                        plan.highlight && !isSelected && "border-brand-blue/50"
+                      )}
                     >
-                      {plan.highlight && !isSelected && (
-                        <span className="absolute -top-2.5 left-4 bg-brand-blue text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                          Most Popular
+                      {plan.highlight && (
+                        <span className="absolute -top-2 right-4 px-2 py-0.5 rounded-full bg-brand-blue text-white text-[10px] font-bold uppercase tracking-wider">
+                          Most popular
                         </span>
                       )}
-                      {isSelected && (
-                        <span className="absolute top-3 right-3 w-6 h-6 rounded-full bg-brand-blue text-white flex items-center justify-center">
-                          <Check size={14} strokeWidth={3} />
-                        </span>
-                      )}
-
-                      <div className="mb-1">
-                        <span className="text-[13px] font-bold text-surface-dark">{plan.name}</span>
+                      <div className="flex items-baseline justify-between mb-1.5">
+                        <h3 className="text-[16px] font-bold text-surface-dark">{plan.name}</h3>
+                        {isSelected && <Check className="h-4 w-4 text-brand-blue" />}
                       </div>
-                      <div className="flex items-baseline gap-1 mb-3">
-                        <span className="text-[28px] font-extrabold text-surface-dark leading-none tracking-tight">£{plan.price}</span>
-                        <span className="text-[12px] text-slate-500">/ mo</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mb-4 leading-snug">{plan.tagline}</p>
-
+                      <p className="text-[12px] text-slate-500 mb-3">{plan.tagline}</p>
+                      <p className="text-[24px] font-bold text-surface-dark mb-3">
+                        £{plan.price}<span className="text-[12px] text-slate-400 font-normal">/mo</span>
+                      </p>
                       <ul className="space-y-1.5">
                         {plan.features.map((f) => (
-                          <li key={f} className="flex items-start gap-1.5 text-[11px] text-surface-dark">
-                            <Check size={12} strokeWidth={3} className="mt-0.5 flex-shrink-0 text-status-green" />
-                            <span>{f}</span>
+                          <li key={f} className="flex items-start gap-1.5 text-[12px] text-slate-600">
+                            <Check className="h-3.5 w-3.5 text-brand-blue shrink-0 mt-0.5" />
+                            {f}
                           </li>
                         ))}
                       </ul>
@@ -431,67 +521,82 @@ export default function OnboardingPage() {
                 })}
               </div>
 
-              {planError && <p className="mt-4 text-[12px] text-status-red">{planError}</p>}
+              {planError && <p className="text-[12px] text-status-red mt-4">{planError}</p>}
+              <p className="text-[11px] text-slate-400 mt-4">
+                You can switch plans any time from Settings → Billing.
+              </p>
 
-              <div className="flex justify-between items-center mt-6">
-                <button
-                  onClick={() => setStep(0)}
-                  className="text-[12px] text-slate-400 hover:text-surface-dark"
-                >
-                  ← Back
+              <div className="flex items-center justify-between mt-6">
+                <button onClick={() => setStep(1)} className="text-[12px] text-slate-400 hover:text-surface-dark">
+                  Back
                 </button>
-                <Button
-                  variant="primary"
-                  disabled={updateWorkspace.isPending}
-                  onClick={handlePlanStep}
-                >
+                <Button size="lg" onClick={handlePlanStep} disabled={updateWorkspace.isPending}>
                   {updateWorkspace.isPending ? "Saving…" : "Start 7-day trial"}
                 </Button>
               </div>
             </>
           )}
 
-          {/* ── Step 3: Invite Your Team ── */}
-          {step === 2 && (
+          {/* ── Step 4 — Invite ── */}
+          {step === 3 && (
             <>
               <h1 className="text-[20px] font-bold text-surface-dark mb-1">Who&apos;s on your crew?</h1>
               <p className="text-[13px] text-slate-500 mb-6">
-                Add team members now or skip and invite them later from the Team page.
+                Invite a few people now or skip and do it later from <span className="font-medium text-surface-dark">Team</span>.
+                Pick <span className="font-medium text-surface-dark">Admin</span> for full workspace access, or <span className="font-medium text-surface-dark">User</span> for someone you&apos;ll add to specific projects later.
               </p>
 
               <div className="space-y-3">
                 {rows.map((row, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <input
-                      type="text"
-                      value={row.fullName}
-                      onChange={(e) => updateRow(i, "fullName", e.target.value)}
-                      placeholder="Full name"
-                      className={`flex-1 min-w-0 ${inputCls}`}
-                    />
-                    <input
-                      type="text"
-                      value={row.nickname}
-                      onChange={(e) => updateRow(i, "nickname", e.target.value)}
-                      placeholder="Nickname"
-                      className="w-24 border border-grey-mid rounded-btn px-3 py-2 text-[13px] text-surface-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-blue placeholder:text-slate-400"
-                    />
-                    <input
-                      type="email"
-                      value={row.email}
-                      onChange={(e) => updateRow(i, "email", e.target.value)}
-                      placeholder="Email address"
-                      className={`flex-1 min-w-0 ${inputCls}`}
-                    />
-                    {rows.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeRow(i)}
-                        className="text-slate-400 hover:text-status-red shrink-0"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
+                  <div key={i} className="border border-grey-mid rounded-card p-3 space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={row.fullName}
+                        onChange={(e) => updateRow(i, "fullName", e.target.value)}
+                        placeholder="Full name (optional)"
+                        className={inputCls}
+                      />
+                      <input
+                        type="email"
+                        value={row.email}
+                        onChange={(e) => updateRow(i, "email", e.target.value)}
+                        placeholder="Email address"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {(["admin", "user"] as const).map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => updateRow(i, "scope", s)}
+                            className={cn(
+                              "px-2.5 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-colors",
+                              row.scope === s
+                                ? "bg-brand-blue text-white"
+                                : "bg-grey-light text-surface-dark hover:bg-grey-mid"
+                            )}
+                          >
+                            {s === "admin" ? "Admin" : "User"}
+                          </button>
+                        ))}
+                        <span className="text-[11px] text-slate-400 ml-1.5">
+                          {row.scope === "admin" ? "Full workspace access" : "Add to projects later"}
+                        </span>
+                      </div>
+                      {rows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeRow(i)}
+                          className="text-slate-400 hover:text-status-red shrink-0 p-1"
+                          aria-label="Remove invite"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -505,34 +610,21 @@ export default function OnboardingPage() {
                 Add another person
               </button>
 
-              {inviteError && (
-                <p className="mt-3 text-[12px] text-status-red">{inviteError}</p>
-              )}
+              {inviteError && <p className="mt-3 text-[12px] text-status-red">{inviteError}</p>}
 
               <p className="mt-4 text-[11px] text-slate-400">
                 Team members will receive an email invite to create their account.
               </p>
 
               <div className="flex justify-between items-center mt-6">
-                <button
-                  onClick={() => setStep(1)}
-                  className="text-[12px] text-slate-400 hover:text-surface-dark"
-                >
-                  ← Back
+                <button onClick={() => setStep(2)} className="text-[12px] text-slate-400 hover:text-surface-dark">
+                  Back
                 </button>
                 <div className="flex items-center gap-3">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setStep(3)}
-                    disabled={inviting}
-                  >
+                  <Button variant="secondary" onClick={() => setStep(4)} disabled={inviting}>
                     Skip for now
                   </Button>
-                  <Button
-                    variant="primary"
-                    onClick={handleInviteStep}
-                    disabled={inviting}
-                  >
+                  <Button onClick={handleInviteStep} disabled={inviting}>
                     {inviting ? "Sending…" : "Continue"}
                   </Button>
                 </div>
@@ -540,25 +632,44 @@ export default function OnboardingPage() {
             </>
           )}
 
-          {/* ── Step 4: All set! ── */}
-          {step === 3 && (
+          {/* ── Step 5 — Done ── */}
+          {step === 4 && (
             <div className="text-center py-4">
-              <CheckCircle2
-                size={56}
-                className="mx-auto mb-5 text-status-green"
-                strokeWidth={1.5}
-              />
+              <CheckCircle2 size={56} className="mx-auto mb-5 text-status-green" strokeWidth={1.5} />
               <h1 className="text-[22px] font-bold text-surface-dark mb-2">You&apos;re ready to go</h1>
-              <p className="text-[14px] text-slate-500 mb-8">
+              <p className="text-[14px] text-slate-500 mb-2">
                 Welcome to LogiTrak{firstName ? `, ${firstName}` : ""}.
               </p>
-              <Button variant="primary" onClick={() => router.push("/dashboard")}>
+              <p className="text-[13px] text-slate-500 mb-8">
+                Next: head to <span className="font-medium text-surface-dark">Equipment</span> to add your first asset, or <span className="font-medium text-surface-dark">Projects</span> to set up a production.
+              </p>
+              <Button size="lg" onClick={() => router.push("/dashboard")}>
                 Go to Dashboard
               </Button>
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function Field({ label, required, optional, children }: {
+  label: string;
+  required?: boolean;
+  optional?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+        {label}
+        {required && <span className="text-status-red ml-1">*</span>}
+        {optional && <span className="ml-1.5 text-[10px] font-normal normal-case text-slate-400">(optional)</span>}
+      </label>
+      {children}
     </div>
   );
 }

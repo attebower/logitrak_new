@@ -8,12 +8,7 @@
 import {
   Document, Page, Text, View, StyleSheet, pdf,
 } from "@react-pdf/renderer";
-
-const BRAND = "#2563EB";
-const SURFACE_DARK = "#0F172A";
-const GREY = "#64748B";
-const GREY_MID = "#CBD5E1";
-const GREY_LIGHT = "#F1F5F9";
+import { getPdfTheme, type PdfTemplate, type PdfTheme } from "./PdfThemes";
 
 function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
@@ -24,31 +19,34 @@ function fmtMoney(n: number | string | { toString(): string } | null | undefined
   return `£${Number(n.toString()).toFixed(2)}`;
 }
 
-const s = StyleSheet.create({
-  page:        { paddingTop: 48, paddingBottom: 56, paddingHorizontal: 48, fontFamily: "Helvetica", fontSize: 10, color: SURFACE_DARK, backgroundColor: "#FFFFFF" },
-  headerBar:   { height: 4, backgroundColor: BRAND, marginBottom: 20 },
-  brandRow:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
-  brandName:   { fontSize: 12, color: BRAND, fontWeight: 700, letterSpacing: 1.2 },
-  documentKind:{ fontSize: 9, color: GREY, textTransform: "uppercase", letterSpacing: 1.2 },
-  title:       { fontSize: 24, fontWeight: 700, marginTop: 4 },
-  subtitle:    { fontSize: 12, color: GREY, marginTop: 4 },
-  metaRow:     { flexDirection: "row", flexWrap: "wrap", gap: 16, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: GREY_MID, borderTopStyle: "solid" },
-  metaLabel:   { fontSize: 8, color: GREY, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 },
-  metaValue:   { fontSize: 11, color: SURFACE_DARK },
-  section:     { marginTop: 24 },
-  sectionHeader:{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: GREY_MID, borderBottomStyle: "solid" },
-  sectionTitle:{ fontSize: 14, fontWeight: 700, color: SURFACE_DARK },
-  sectionCount:{ fontSize: 10, color: GREY },
-  tableHeader: { flexDirection: "row", backgroundColor: GREY_LIGHT, paddingVertical: 6, paddingHorizontal: 8 },
-  tableRow:    { flexDirection: "row", paddingVertical: 6, paddingHorizontal: 8, borderBottomWidth: 0.5, borderBottomColor: GREY_MID, borderBottomStyle: "solid" },
-  th:          { fontSize: 9, color: GREY, textTransform: "uppercase", fontWeight: 700, letterSpacing: 0.5 },
-  td:          { fontSize: 10, color: SURFACE_DARK },
-  signRow:     { marginTop: 36, flexDirection: "row", gap: 24 },
-  signBlock:   { flex: 1 },
-  signLabel:   { fontSize: 9, color: GREY, textTransform: "uppercase", letterSpacing: 1, marginBottom: 28 },
-  signLine:    { borderTopWidth: 0.5, borderTopColor: SURFACE_DARK, borderTopStyle: "solid", paddingTop: 4, fontSize: 9, color: GREY },
-  footer:      { position: "absolute", left: 48, right: 48, bottom: 24, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: GREY, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: GREY_MID, borderTopStyle: "solid" },
-});
+function buildStyles(theme: PdfTheme) {
+  const { colors, page, font, spacing, table, footer } = theme;
+  return StyleSheet.create({
+    page:        { paddingTop: page.paddingTop, paddingBottom: page.paddingBottom + 16, paddingHorizontal: page.paddingHorizontal, fontFamily: font.family, fontSize: font.baseSize, color: colors.surfaceDark, backgroundColor: "#FFFFFF" },
+    headerBar:   { height: theme.header.barHeight, backgroundColor: colors.brand, marginBottom: 20 },
+    brandRow:    { flexDirection: "row", alignItems: "center", justifyContent: theme.header.align === "center" ? "center" : "space-between", marginBottom: 6, gap: theme.header.align === "center" ? 12 : 0 },
+    brandName:   { fontSize: font.baseSize + 2, color: colors.brand, fontWeight: 700, letterSpacing: 1.2 },
+    documentKind:{ fontSize: font.metaSize, color: colors.grey, textTransform: "uppercase", letterSpacing: 1.2 },
+    title:       { fontSize: font.titleSize, fontWeight: 700, marginTop: 4, textAlign: theme.header.align },
+    subtitle:    { fontSize: font.baseSize + 2, color: colors.grey, marginTop: 4, textAlign: theme.header.align },
+    metaRow:     { flexDirection: "row", flexWrap: "wrap", gap: 16, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.greyMid, borderTopStyle: "solid" },
+    metaLabel:   { fontSize: font.metaSize - 1, color: colors.grey, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 },
+    metaValue:   { fontSize: font.baseSize + 1, color: colors.surfaceDark },
+    section:     { marginTop: spacing.section },
+    sectionHeader:{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.greyMid, borderBottomStyle: "solid" },
+    sectionTitle:{ fontSize: font.baseSize + 4, fontWeight: 700, color: colors.surfaceDark, textTransform: table.headerCase === "upper" ? "uppercase" : "none", letterSpacing: table.headerCase === "upper" ? 1 : 0 },
+    sectionCount:{ fontSize: font.baseSize, color: colors.grey },
+    tableHeader: { flexDirection: "row", backgroundColor: table.headerBackground, paddingVertical: spacing.row - 2, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: table.rowBorderColor, borderBottomStyle: "solid" },
+    tableRow:    { flexDirection: "row", paddingVertical: spacing.row - 2, paddingHorizontal: 8, ...(table.rowBorder !== "none" && { borderBottomWidth: 0.5, borderBottomColor: colors.greyMid, borderBottomStyle: "solid" as const }) },
+    th:          { fontSize: font.metaSize, color: table.headerColor, textTransform: table.headerCase === "upper" ? "uppercase" : "none", fontWeight: 700, letterSpacing: 0.5 },
+    td:          { fontSize: font.baseSize, color: colors.surfaceDark },
+    signRow:     { marginTop: 36, flexDirection: "row", gap: 24 },
+    signBlock:   { flex: 1 },
+    signLabel:   { fontSize: font.metaSize, color: colors.grey, textTransform: "uppercase", letterSpacing: 1, marginBottom: 28 },
+    signLine:    { borderTopWidth: 0.5, borderTopColor: colors.surfaceDark, borderTopStyle: "solid", paddingTop: 4, fontSize: font.metaSize, color: colors.grey },
+    footer:      { position: "absolute", left: page.paddingHorizontal, right: page.paddingHorizontal, bottom: 24, flexDirection: "row", justifyContent: footer.align === "center" ? "center" : "space-between", fontSize: font.metaSize, color: colors.grey, paddingTop: 6, ...(footer.showBar && { borderTopWidth: 0.5, borderTopColor: colors.greyMid, borderTopStyle: "solid" as const }), fontStyle: footer.italic ? "italic" : "normal", gap: footer.align === "center" ? 8 : 0 },
+  });
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +61,8 @@ export interface CrossHireEquipmentListItem {
 }
 export interface CrossHireEquipmentListData {
   workspaceName: string;
+  /** Visual template — driven by /settings/documents. Defaults to modern. */
+  template?: PdfTemplate;
   event: {
     id:             string;
     startDate:      Date | string;
@@ -82,6 +82,8 @@ export interface CrossHireEquipmentListData {
 
 function EquipmentListDocument({ data }: { data: CrossHireEquipmentListData }) {
   const { workspaceName, event } = data;
+  const theme = getPdfTheme(data.template);
+  const s     = buildStyles(theme);
   const generated = new Date();
 
   return (
@@ -92,9 +94,9 @@ function EquipmentListDocument({ data }: { data: CrossHireEquipmentListData }) {
     >
       <Page size="A4" style={s.page} wrap>
         <View>
-          <View style={s.headerBar} fixed />
+          {theme.header.showBar && <View style={s.headerBar} fixed />}
           <View style={s.brandRow}>
-            <Text style={s.brandName}>LOGITRAK</Text>
+            <Text style={s.brandName}>{workspaceName.toUpperCase()}</Text>
             <Text style={s.documentKind}>Equipment List</Text>
           </View>
           <Text style={s.title}>{event.hireCustomer.productionName}</Text>
@@ -160,7 +162,7 @@ function EquipmentListDocument({ data }: { data: CrossHireEquipmentListData }) {
             <View style={s.sectionHeader}>
               <Text style={s.sectionTitle}>Notes</Text>
             </View>
-            <Text style={[s.td, { color: GREY }]}>{event.notes}</Text>
+            <Text style={[s.td, { color: theme.colors.grey }]}>{event.notes}</Text>
           </View>
         )}
 

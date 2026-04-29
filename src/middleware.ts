@@ -35,9 +35,11 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = pathname === "/" ||
                         pathname.startsWith("/pricing") ||
                         pathname.startsWith("/about") ||
+                        pathname.startsWith("/accept-invite") ||
                         pathname.startsWith("/preview-onboarding") ||
                         pathname.startsWith("/preview-equipment-guide") ||
-                        pathname.startsWith("/preview-checkinout-guide");
+                        pathname.startsWith("/preview-checkinout-guide") ||
+                        pathname.startsWith("/preview-dashboard");
 
   if (!user && !isAuthRoute && !isPublicRoute) {
     return NextResponse.redirect(new URL("/sign-in", request.url));

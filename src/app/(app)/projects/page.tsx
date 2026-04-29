@@ -13,7 +13,7 @@
 import { useState } from "react";
 import {
   Plus, Film, Zap, Calendar, ChevronDown, Building2,
-  MapPin, Layers, Package, X, ChevronRight, FileDown, Pencil,
+  MapPin, Layers, Package, X, ChevronRight, FileDown, Pencil, Users, UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppTopbar } from "@/components/shared/AppTopbar";
@@ -21,6 +21,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { cn } from "@/lib/utils";
 import { VenuePicker, type VenueValue } from "@/components/shared/VenuePicker";
+import { InviteModal, type ProjectOption, type PendingInvite } from "@/components/shared/InviteModal";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/routers/_app";
 
@@ -1325,6 +1326,12 @@ function ProjectDetail({
         )}
       </section>
 
+      <CrewSection
+        projectId={projectId}
+        workspaceId={workspaceId}
+        isManager={isManager}
+      />
+
       {showAddSet && (
         <AddSetModal
           projectId={projectId}
@@ -1363,6 +1370,175 @@ function ProjectDetail({
         />
       )}
     </div>
+  );
+}
+
+// ── Crew section ─────────────────────────────────────────────────────────
+
+function CrewSection({
+  projectId, workspaceId, isManager,
+}: {
+  projectId:   string;
+  workspaceId: string;
+  isManager:   boolean;
+}) {
+  const utils = trpc.useUtils();
+  const [picking,    setPicking]    = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+
+  const { data: members, isLoading } = trpc.team.listProjectMembers.useQuery(
+    { workspaceId, projectId },
+    { enabled: !!projectId }
+  );
+  const { data: allMembers } = trpc.team.list.useQuery(
+    { workspaceId },
+    { enabled: isManager }
+  );
+  const { data: allProjects } = trpc.project.list.useQuery(
+    { workspaceId },
+    { enabled: isManager && showInvite }
+  );
+  const { data: invitations } = trpc.team.listInvitations.useQuery(
+    { workspaceId },
+    { enabled: isManager && showInvite }
+  );
+
+  const addMut = trpc.team.addMemberToProject.useMutation({
+    onSuccess: () => void utils.team.listProjectMembers.invalidate({ projectId }),
+  });
+  const removeMut = trpc.team.removeMemberFromProject.useMutation({
+    onSuccess: () => void utils.team.listProjectMembers.invalidate({ projectId }),
+  });
+  const inviteMut = trpc.team.invite.useMutation({
+    onSuccess: () => {
+      void utils.team.listInvitations.invalidate();
+    },
+  });
+
+  // Workspace users not already on this project, excluding admins/owners
+  // (they have implicit access workspace-wide).
+  const onProjectIds = new Set((members ?? []).map((m) => m.memberId));
+  const addableMembers = (allMembers ?? []).filter(
+    (m) => !onProjectIds.has(m.id) && m.role !== "owner" && m.role !== "admin"
+  );
+
+  return (
+    <section className="bg-white rounded-panel border border-grey-mid p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Users size={14} className="text-grey" />
+          <h2 className="text-[14px] font-semibold text-surface-dark">
+            Crew {(members?.length ?? 0) > 0 && <span className="text-grey font-normal">· {members?.length}</span>}
+          </h2>
+        </div>
+        {isManager && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setPicking((v) => !v)}>
+              <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+              {picking ? "Done" : "Add existing"}
+            </Button>
+            <Button size="sm" onClick={() => setShowInvite(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Invite new
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <p className="text-[11px] text-grey">
+        Owners and admins always have access. Add users here to give them access to just this project.
+      </p>
+
+      {/* Picker */}
+      {picking && isManager && (
+        <div className="border border-grey-mid rounded-btn overflow-hidden">
+          {addableMembers.length === 0 ? (
+            <p className="px-3 py-3 text-[12px] text-grey text-center">
+              All eligible users are already on this project.
+            </p>
+          ) : (
+            addableMembers.map((m) => (
+              <div key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 border-b border-grey-mid last:border-0 hover:bg-grey-light/40">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-surface-dark truncate">
+                    {m.user.displayName ?? m.user.email}
+                  </div>
+                  {m.user.displayName && (
+                    <div className="text-[11px] text-grey truncate">{m.user.email}</div>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={addMut.isPending}
+                  onClick={() => addMut.mutate({ workspaceId, memberId: m.id, projectId })}
+                >
+                  Add
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Existing members */}
+      {isLoading ? (
+        <p className="text-[12px] text-grey">Loading…</p>
+      ) : (members?.length ?? 0) === 0 ? (
+        !picking && (
+          <p className="text-[12px] text-grey italic">No project-scoped users yet.</p>
+        )
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {members!.map((m) => (
+            <span key={m.memberId} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-md text-[11px] font-semibold bg-violet-100 text-violet-700">
+              {m.user.displayName ?? m.user.email}
+              {isManager && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Remove ${m.user.displayName ?? m.user.email} from this project?`)) {
+                      removeMut.mutate({ workspaceId, memberId: m.memberId, projectId });
+                    }
+                  }}
+                  className="hover:bg-violet-200 rounded p-0.5"
+                  aria-label="Remove"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {showInvite && (
+        <InviteModal
+          isOpen={showInvite}
+          onClose={() => setShowInvite(false)}
+          onSendInvite={async ({ email, role, projectIds }) => {
+            await inviteMut.mutateAsync({
+              workspaceId,
+              email,
+              role: role === "read-only" ? ("read_only" as never) : role,
+              projectIds,
+            });
+          }}
+          pendingInvites={(invitations ?? []).map((inv): PendingInvite => ({
+            id:         inv.id,
+            email:      inv.email,
+            role:       (inv.role === "read_only" ? "read-only" : inv.role) as PendingInvite["role"],
+            sentAt:     inv.createdAt.toISOString(),
+            projectIds: inv.projectIds ?? [],
+          }))}
+          projects={(allProjects ?? []).map((p): ProjectOption => ({
+            id: p.id, name: p.name, status: p.status,
+          }))}
+          initialProjectIds={[projectId]}
+          lockToUser
+        />
+      )}
+    </section>
   );
 }
 

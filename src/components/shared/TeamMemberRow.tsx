@@ -72,6 +72,8 @@ export interface TeamMemberRowProps {
   onChangeRole?:    (id: string) => void;
   onDeactivate?:    (id: string) => void;
   onResendInvite?:  (id: string) => void;
+  /** Optional content slotted below the member's name/email (e.g. project chips). */
+  children?:        React.ReactNode;
 }
 
 const statusPill: Record<MemberStatus, { label: string; cls: string }> = {
@@ -86,6 +88,7 @@ export function TeamMemberRow({
   onChangeRole,
   onDeactivate,
   onResendInvite,
+  children,
 }: TeamMemberRowProps) {
   const pill = statusPill[member.status];
 
@@ -108,9 +111,10 @@ export function TeamMemberRow({
           <div className="w-8 h-8 rounded-full bg-brand-blue flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
             {initials}
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-[13px] font-semibold text-surface-dark">{member.name}</div>
             <div className="text-[11px] text-grey">{member.email}</div>
+            {children}
           </div>
         </div>
       </td>

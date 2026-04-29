@@ -16,6 +16,9 @@ const SETTINGS_NAV = [
     label: "Account",
     items: [
       { label: "General",        href: "/settings" },
+      { label: "Business",       href: "/settings/business" },
+      { label: "Invoicing",      href: "/settings/invoicing" },
+      { label: "Documents",      href: "/settings/documents" },
       { label: "Billing",        href: "/settings/billing" },
     ],
   },

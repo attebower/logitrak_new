@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, workspaceProcedure } from "../trpc";
-import { IndustryType, SubscriptionTier, WorkspaceRole } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
+import { IndustryType, SubscriptionTier, WorkspaceRole, InvoiceTemplate, DocumentTemplate } from "@prisma/client";
 
 // Plan → limits (mirrors STRIPE_PLANS in lib/stripe.ts)
 const TIER_LIMITS: Record<SubscriptionTier, { maxUsers: number; maxAssets: number }> = {
@@ -86,6 +87,20 @@ export const workspaceRouter = router({
         industryType:     z.nativeEnum(IndustryType),
         department:       z.string().optional(),
         subscriptionTier: z.nativeEnum(SubscriptionTier).default("starter"),
+        // Optional business profile fields — onboarding's Business step
+        // populates these. Anything missing stays null.
+        businessName:     z.string().nullable().optional(),
+        addressLine1:     z.string().nullable().optional(),
+        addressLine2:     z.string().nullable().optional(),
+        city:             z.string().nullable().optional(),
+        county:           z.string().nullable().optional(),
+        postcode:         z.string().nullable().optional(),
+        country:          z.string().nullable().optional(),
+        vatNumber:        z.string().nullable().optional(),
+        businessEmail:    z.string().email().nullable().optional().or(z.literal("")),
+        businessPhone:    z.string().nullable().optional(),
+        bankDetails:      z.string().nullable().optional(),
+        logoUrl:          z.string().url().nullable().optional().or(z.literal("")),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -111,6 +126,19 @@ export const workspaceRouter = router({
             trialEndsAt,
             maxUsers:  limits.maxUsers,
             maxAssets: limits.maxAssets,
+            // Business profile pass-throughs (empty strings → null)
+            businessName:  input.businessName  || null,
+            addressLine1:  input.addressLine1  || null,
+            addressLine2:  input.addressLine2  || null,
+            city:          input.city          || null,
+            county:        input.county        || null,
+            postcode:      input.postcode      || null,
+            country:       input.country       || null,
+            vatNumber:     input.vatNumber     || null,
+            businessEmail: input.businessEmail || null,
+            businessPhone: input.businessPhone || null,
+            bankDetails:   input.bankDetails   || null,
+            logoUrl:       input.logoUrl       || null,
             members: {
               create: {
                 userId: ctx.session.user.id,
@@ -228,6 +256,160 @@ export const workspaceRouter = router({
         }
         throw err;
       }
+    }),
+
+  // ── Business profile (used for invoice From block, equipment list header) ──
+  getBusinessProfile: workspaceProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .query(async ({ ctx }) => {
+      const ws = await ctx.prisma.workspace.findUnique({
+        where: { id: ctx.workspaceId! },
+        select: {
+          id:            true,
+          name:          true,
+          businessName:  true,
+          addressLine1:  true,
+          addressLine2:  true,
+          city:          true,
+          county:        true,
+          postcode:      true,
+          country:       true,
+          vatNumber:     true,
+          businessEmail: true,
+          businessPhone: true,
+          bankDetails:   true,
+          logoUrl:       true,
+        },
+      });
+      if (!ws) throw new TRPCError({ code: "NOT_FOUND", message: "Workspace not found" });
+      return ws;
+    }),
+
+  updateBusinessProfile: workspaceProcedure
+    .input(z.object({
+      workspaceId:   z.string(),
+      businessName:  z.string().nullable().optional(),
+      addressLine1:  z.string().nullable().optional(),
+      addressLine2:  z.string().nullable().optional(),
+      city:          z.string().nullable().optional(),
+      county:        z.string().nullable().optional(),
+      postcode:      z.string().nullable().optional(),
+      country:       z.string().nullable().optional(),
+      vatNumber:     z.string().nullable().optional(),
+      businessEmail: z.string().email().nullable().optional().or(z.literal("")),
+      businessPhone: z.string().nullable().optional(),
+      bankDetails:   z.string().nullable().optional(),
+      logoUrl:       z.string().url().nullable().optional().or(z.literal("")),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      const data: Record<string, string | null> = {};
+      const fields = ["businessName","addressLine1","addressLine2","city","county","postcode","country","vatNumber","businessEmail","businessPhone","bankDetails","logoUrl"] as const;
+      for (const f of fields) {
+        const v = input[f];
+        if (v !== undefined) data[f] = v === "" ? null : (v as string | null);
+      }
+      if (Object.keys(data).length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No fields to update" });
+      }
+      return await ctx.prisma.workspace.update({
+        where:  { id: ctx.workspaceId! },
+        data,
+        select: { id: true },
+      });
+    }),
+
+  // ── Invoicing settings ──
+  getInvoiceSettings: workspaceProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .query(async ({ ctx }) => {
+      const ws = await ctx.prisma.workspace.findUnique({
+        where: { id: ctx.workspaceId! },
+        select: {
+          invoicePrefix:      true,
+          invoiceTemplate:    true,
+          vatRate:            true,
+          paymentTermsDays:   true,
+          paymentTermsText:   true,
+          invoiceFooter:      true,
+          lastInvoiceSeqYear: true,
+          lastInvoiceSeq:     true,
+        },
+      });
+      if (!ws) throw new TRPCError({ code: "NOT_FOUND", message: "Workspace not found" });
+
+      // Derive next-number preview
+      const year      = new Date().getFullYear();
+      const nextSeq   = (ws.lastInvoiceSeqYear === year ? ws.lastInvoiceSeq : 0) + 1;
+      const preview   = `${ws.invoicePrefix}-${year}-${String(nextSeq).padStart(4, "0")}`;
+
+      return {
+        invoicePrefix:    ws.invoicePrefix,
+        invoiceTemplate:  ws.invoiceTemplate,
+        vatRate:          ws.vatRate.toString(),
+        paymentTermsDays: ws.paymentTermsDays,
+        paymentTermsText: ws.paymentTermsText,
+        invoiceFooter:    ws.invoiceFooter,
+        invoicePreview:   preview,
+      };
+    }),
+
+  updateInvoiceSettings: workspaceProcedure
+    .input(z.object({
+      workspaceId:      z.string(),
+      invoicePrefix:    z.string().min(1).max(16).regex(/^[A-Z0-9_-]+$/i, "Use letters, numbers, dash or underscore only").optional(),
+      invoiceTemplate:  z.nativeEnum(InvoiceTemplate).optional(),
+      vatRate:          z.number().min(0).max(1).optional(),
+      paymentTermsDays: z.number().int().min(0).max(365).optional(),
+      paymentTermsText: z.string().nullable().optional(),
+      invoiceFooter:    z.string().nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+
+      const data: Record<string, unknown> = {};
+      if (input.invoicePrefix    !== undefined) data.invoicePrefix    = input.invoicePrefix.toUpperCase();
+      if (input.invoiceTemplate  !== undefined) data.invoiceTemplate  = input.invoiceTemplate;
+      if (input.vatRate          !== undefined) data.vatRate          = new Decimal(input.vatRate);
+      if (input.paymentTermsDays !== undefined) data.paymentTermsDays = input.paymentTermsDays;
+      if (input.paymentTermsText !== undefined) data.paymentTermsText = input.paymentTermsText === "" ? null : input.paymentTermsText;
+      if (input.invoiceFooter    !== undefined) data.invoiceFooter    = input.invoiceFooter    === "" ? null : input.invoiceFooter;
+
+      if (Object.keys(data).length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No fields to update" });
+      }
+      return await ctx.prisma.workspace.update({
+        where:  { id: ctx.workspaceId! },
+        data,
+        select: { id: true },
+      });
+    }),
+
+  // ── Document template (drives Equipment List / Reports / Set Snapshot PDFs) ──
+  getDocumentTemplate: workspaceProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .query(async ({ ctx }) => {
+      const ws = await ctx.prisma.workspace.findUnique({
+        where:  { id: ctx.workspaceId! },
+        select: { documentTemplate: true },
+      });
+      if (!ws) throw new TRPCError({ code: "NOT_FOUND", message: "Workspace not found" });
+      return { documentTemplate: ws.documentTemplate };
+    }),
+
+  updateDocumentTemplate: workspaceProcedure
+    .input(z.object({
+      workspaceId:      z.string(),
+      documentTemplate: z.nativeEnum(DocumentTemplate),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requireRole(ctx.userRole, ADMIN_ROLES);
+      return await ctx.prisma.workspace.update({
+        where:  { id: ctx.workspaceId! },
+        data:   { documentTemplate: input.documentTemplate },
+        select: { id: true },
+      });
     }),
 
   listMyWorkspaces: protectedProcedure.query(async ({ ctx }) => {

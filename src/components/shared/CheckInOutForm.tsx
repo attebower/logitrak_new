@@ -5,6 +5,7 @@ import { AppTopbar } from "@/components/shared/AppTopbar";
 import { ScanArea } from "@/components/shared/ScanArea";
 import { LocationPicker } from "@/components/shared/LocationPicker";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ScanWarningList } from "@/components/shared/ScanWarningBanner";
@@ -59,6 +60,15 @@ export function CheckInOutForm({ mode }: { mode: CheckInOutMode }) {
 
   const [scanSearch,  setScanSearch]  = useState("");
   const [warnings,    setWarnings]    = useState<ScanWarning[]>([]);
+  // Briefly highlights the most-recently-scanned row in the batch (~600ms).
+  const [latestSerial, setLatestSerial] = useState<string | null>(null);
+  const flashTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashRow(serial: string) {
+    setLatestSerial(serial);
+    if (flashTimeout.current) clearTimeout(flashTimeout.current);
+    flashTimeout.current = setTimeout(() => setLatestSerial(null), 700);
+  }
+  useEffect(() => () => { if (flashTimeout.current) clearTimeout(flashTimeout.current); }, []);
 
   const [damageEditingSerial, setDamageEditingSerial] = useState<string | null>(null);
   const [damageDesc,       setDamageDesc]       = useState("");
@@ -198,6 +208,7 @@ export function CheckInOutForm({ mode }: { mode: CheckInOutMode }) {
         equipmentId: match.id,
       };
       setInBatch((b) => [...b, entry]);
+      flashRow(match.serial);
       setRepairEditingSerial(match.serial);
       setRepairDescription("");
       setRepairedBy("");
@@ -271,6 +282,7 @@ export function CheckInOutForm({ mode }: { mode: CheckInOutMode }) {
     };
     if (mode === "out") setOutBatch((b) => [...b, entry]);
     else                setInBatch((b) => [...b, entry]);
+    flashRow(match.serial);
   }, [mode, outBatch, inBatch, utils, workspaceId]);
 
   const handleScan = useCallback((serial: string) => {
@@ -401,6 +413,7 @@ export function CheckInOutForm({ mode }: { mode: CheckInOutMode }) {
 
               <BatchPanel
                 mode={mode}
+                latestSerial={latestSerial}
                 items={mode === "out" ? outBatch : inBatch}
                 onRemove={(s) => {
                   if (mode === "out") setOutBatch((b) => b.filter((i) => i.serial !== s));
@@ -581,7 +594,7 @@ function ScanPanel({
 }
 
 function BatchPanel({
-  mode, items, onRemove, onClear,
+  mode, items, latestSerial, onRemove, onClear,
   onFlagDamage, onUnflagDamage, damageEditingSerial,
   damageDesc, setDamageDesc,
   damageItemLoc, setDamageItemLoc,
@@ -596,6 +609,7 @@ function BatchPanel({
 }: {
   mode: CheckInOutMode;
   items: BatchEntry[];
+  latestSerial: string | null;
   onRemove: (s: string) => void;
   onClear:  () => void;
   onFlagDamage:   (s: string) => void;
@@ -639,9 +653,13 @@ function BatchPanel({
               const isEditingDamage = damageEditingSerial === item.serial;
               const isEditingRepair = repairEditingSerial === item.serial;
 
+              const isLatest = latestSerial === item.serial;
               return (
                 <div key={item.serial}>
-                  <div className="px-5 py-3 flex items-center gap-3">
+                  <div className={cn(
+                    "px-5 py-3 flex items-center gap-3 transition-colors duration-700",
+                    isLatest && "bg-status-green/15"
+                  )}>
                     <span className="text-[13px] text-surface-dark">{item.serial}</span>
                     <span className="text-[13px] text-grey flex-1 truncate">{item.name}</span>
                     {item.isCrossHire && (

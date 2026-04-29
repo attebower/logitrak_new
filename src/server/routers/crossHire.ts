@@ -143,6 +143,21 @@ export const crossHireRouter = router({
 
       // Create the event + items in a transaction
       const event = await ctx.prisma.$transaction(async (tx) => {
+        // Atomically allocate the next invoice number for this workspace.
+        // Sequence resets each calendar year. Format: {prefix}-{YYYY}-{0001}.
+        const ws = await tx.workspace.findUnique({
+          where:  { id: wid },
+          select: { invoicePrefix: true, lastInvoiceSeqYear: true, lastInvoiceSeq: true },
+        });
+        if (!ws) throw new TRPCError({ code: "NOT_FOUND", message: "Workspace not found" });
+        const year       = startDateObj.getFullYear();
+        const nextSeq    = (ws.lastInvoiceSeqYear === year ? ws.lastInvoiceSeq : 0) + 1;
+        const invoiceNo  = `${ws.invoicePrefix}-${year}-${String(nextSeq).padStart(4, "0")}`;
+        await tx.workspace.update({
+          where: { id: wid },
+          data:  { lastInvoiceSeqYear: year, lastInvoiceSeq: nextSeq },
+        });
+
         const created = await tx.crossHireEvent.create({
           data: {
             workspaceId:    wid,
@@ -154,6 +169,7 @@ export const crossHireRouter = router({
             startDate:      startDateObj,
             endDate:        endDateObj,
             notes:          input.notes ?? null,
+            invoiceNumber:  invoiceNo,
             createdById:    userId,
             equipmentItems: {
               create: input.equipmentItems.map((item) => ({

@@ -53,6 +53,11 @@ export async function GET(req: Request) {
     });
     if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+    const workspaceCfg = await prisma.workspace.findUnique({
+      where:  { id: ps.workspaceId },
+      select: { documentTemplate: true },
+    });
+
     const profile = await prisma.userProfile.findUnique({
       where: { id: user.id },
       select: { displayName: true, email: true },
@@ -218,6 +223,7 @@ export async function GET(req: Request) {
           repairedAt:     d.repairLogs[0].repairedAt ?? null,
         } : null,
       })),
+      template: workspaceCfg?.documentTemplate,
     });
 
     // Headers must be ASCII. Build an ASCII-only filename + a

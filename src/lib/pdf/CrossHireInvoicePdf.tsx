@@ -6,21 +6,16 @@
  *   Period dates · invoice #
  *   Line items: serial, description, days, daily rate, line total
  *   Totals: subtotal, optional VAT, total
+ *   Optional payment terms + footer text
  *
- * Note: workspace currently only stores `name`. Owner address/VAT/contact
- * fields are not yet on the schema — when added (Workspace settings page),
- * pass them through `owner` here and they'll render in the From block.
+ * Visual variant is controlled by the `template` field (modern/classic/minimal),
+ * sourced from /settings/invoicing. See src/lib/pdf/PdfThemes.ts.
  */
 
 import {
-  Document, Page, Text, View, StyleSheet, pdf,
+  Document, Page, Text, View, StyleSheet, Image, pdf,
 } from "@react-pdf/renderer";
-
-const BRAND = "#2563EB";
-const SURFACE_DARK = "#0F172A";
-const GREY = "#64748B";
-const GREY_MID = "#CBD5E1";
-const GREY_LIGHT = "#F1F5F9";
+import { getPdfTheme, type PdfTemplate, type PdfTheme } from "./PdfThemes";
 
 function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
@@ -31,7 +26,6 @@ function fmtMoney(n: number | string | { toString(): string } | null | undefined
   return `£${Number(n.toString()).toFixed(2)}`;
 }
 
-// Days helper — prefer event.totalDays, fall back to (end - start), else 1.
 function computeDays(startDate: Date | string, endDate: Date | string | null | undefined, totalDays: number | null | undefined): number {
   if (totalDays && totalDays > 0) return totalDays;
   if (endDate) {
@@ -41,52 +35,57 @@ function computeDays(startDate: Date | string, endDate: Date | string | null | u
   return 1;
 }
 
-const s = StyleSheet.create({
-  page:        { paddingTop: 48, paddingBottom: 56, paddingHorizontal: 48, fontFamily: "Helvetica", fontSize: 10, color: SURFACE_DARK, backgroundColor: "#FFFFFF" },
-  headerBar:   { height: 4, backgroundColor: BRAND, marginBottom: 20 },
-  brandRow:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
-  brandName:   { fontSize: 12, color: BRAND, fontWeight: 700, letterSpacing: 1.2 },
-  documentKind:{ fontSize: 9, color: GREY, textTransform: "uppercase", letterSpacing: 1.2 },
-  title:       { fontSize: 24, fontWeight: 700, marginTop: 4 },
-  subtitle:    { fontSize: 12, color: GREY, marginTop: 4 },
+// ── Theme-driven StyleSheet ───────────────────────────────────────────────
 
-  partyRow:    { flexDirection: "row", gap: 24, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: GREY_MID, borderTopStyle: "solid" },
-  partyBlock:  { flex: 1 },
-  partyLabel:  { fontSize: 8, color: GREY, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 },
-  partyLine:   { fontSize: 11, color: SURFACE_DARK, lineHeight: 1.4 },
+function buildStyles(theme: PdfTheme) {
+  const { colors, page, font, spacing, table, footer } = theme;
+  return StyleSheet.create({
+    page:        { paddingTop: page.paddingTop, paddingBottom: page.paddingBottom + 16, paddingHorizontal: page.paddingHorizontal, fontFamily: font.family, fontSize: font.baseSize, color: colors.surfaceDark, backgroundColor: "#FFFFFF" },
+    headerBar:   { height: theme.header.barHeight, backgroundColor: colors.brand, marginBottom: 20 },
+    brandRow:    { flexDirection: "row", alignItems: "center", justifyContent: theme.header.align === "center" ? "center" : "space-between", marginBottom: 6, gap: theme.header.align === "center" ? 12 : 0 },
+    brandName:   { fontSize: font.baseSize + 2, color: colors.brand, fontWeight: 700, letterSpacing: 1.2 },
+    documentKind:{ fontSize: font.metaSize, color: colors.grey, textTransform: "uppercase", letterSpacing: 1.2 },
+    title:       { fontSize: font.titleSize, fontWeight: 700, marginTop: 4, textAlign: theme.header.align },
+    subtitle:    { fontSize: font.baseSize + 2, color: colors.grey, marginTop: 4, textAlign: theme.header.align },
 
-  metaRow:     { flexDirection: "row", flexWrap: "wrap", gap: 16, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: GREY_MID, borderTopStyle: "solid" },
-  metaLabel:   { fontSize: 8, color: GREY, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 },
-  metaValue:   { fontSize: 11, color: SURFACE_DARK },
+    partyRow:    { flexDirection: "row", gap: 24, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.greyMid, borderTopStyle: "solid" },
+    partyBlock:  { flex: 1 },
+    partyLabel:  { fontSize: font.metaSize - 1, color: colors.grey, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 },
+    partyLine:   { fontSize: font.baseSize + 1, color: colors.surfaceDark, lineHeight: font.lineHeight },
 
-  section:     { marginTop: 24 },
-  sectionHeader:{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: GREY_MID, borderBottomStyle: "solid" },
-  sectionTitle:{ fontSize: 14, fontWeight: 700, color: SURFACE_DARK },
-  sectionCount:{ fontSize: 10, color: GREY },
+    metaRow:     { flexDirection: "row", flexWrap: "wrap", gap: 16, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.greyMid, borderTopStyle: "solid" },
+    metaLabel:   { fontSize: font.metaSize - 1, color: colors.grey, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 },
+    metaValue:   { fontSize: font.baseSize + 1, color: colors.surfaceDark },
 
-  tableHeader: { flexDirection: "row", backgroundColor: GREY_LIGHT, paddingVertical: 6, paddingHorizontal: 8 },
-  tableRow:    { flexDirection: "row", paddingVertical: 6, paddingHorizontal: 8, borderBottomWidth: 0.5, borderBottomColor: GREY_MID, borderBottomStyle: "solid" },
-  th:          { fontSize: 9, color: GREY, textTransform: "uppercase", fontWeight: 700, letterSpacing: 0.5 },
-  td:          { fontSize: 10, color: SURFACE_DARK },
+    section:     { marginTop: spacing.section },
+    sectionHeader:{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.greyMid, borderBottomStyle: "solid" },
+    sectionTitle:{ fontSize: font.baseSize + 4, fontWeight: 700, color: colors.surfaceDark, textTransform: table.headerCase === "upper" ? "uppercase" : "none", letterSpacing: table.headerCase === "upper" ? 1 : 0 },
+    sectionCount:{ fontSize: font.baseSize, color: colors.grey },
 
-  totalsBlock: { marginTop: 12, alignSelf: "flex-end", width: 240 },
-  totalRow:    { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
-  totalLabel:  { fontSize: 10, color: GREY },
-  totalValue:  { fontSize: 10, color: SURFACE_DARK },
-  grandRow:    { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, marginTop: 4, borderTopWidth: 1, borderTopColor: SURFACE_DARK, borderTopStyle: "solid" },
-  grandLabel:  { fontSize: 12, fontWeight: 700, color: SURFACE_DARK },
-  grandValue:  { fontSize: 14, fontWeight: 700, color: SURFACE_DARK },
+    tableHeader: { flexDirection: "row", backgroundColor: table.headerBackground, paddingVertical: spacing.row - 2, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: table.rowBorderColor, borderBottomStyle: "solid" },
+    tableRow:    { flexDirection: "row", paddingVertical: spacing.row - 2, paddingHorizontal: 8, ...(table.rowBorder !== "none" && { borderBottomWidth: 0.5, borderBottomColor: colors.greyMid, borderBottomStyle: "solid" as const }) },
+    th:          { fontSize: font.metaSize, color: table.headerColor, textTransform: table.headerCase === "upper" ? "uppercase" : "none", fontWeight: 700, letterSpacing: 0.5 },
+    td:          { fontSize: font.baseSize, color: colors.surfaceDark },
 
-  notesTitle:  { fontSize: 9, color: GREY, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 },
-  notesText:   { fontSize: 10, color: GREY },
+    totalsBlock: { marginTop: 12, alignSelf: "flex-end", width: 240 },
+    totalRow:    { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
+    totalLabel:  { fontSize: font.baseSize, color: colors.grey },
+    totalValue:  { fontSize: font.baseSize, color: colors.surfaceDark },
+    grandRow:    { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, marginTop: 4, borderTopWidth: 1, borderTopColor: colors.surfaceDark, borderTopStyle: "solid" },
+    grandLabel:  { fontSize: font.baseSize + 2, fontWeight: 700, color: colors.surfaceDark },
+    grandValue:  { fontSize: font.baseSize + 4, fontWeight: 700, color: colors.surfaceDark },
 
-  footer:      { position: "absolute", left: 48, right: 48, bottom: 24, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: GREY, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: GREY_MID, borderTopStyle: "solid" },
-});
+    notesTitle:  { fontSize: font.metaSize, color: colors.grey, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 },
+    notesText:   { fontSize: font.baseSize, color: colors.grey, lineHeight: font.lineHeight },
+    footerBlock: { fontSize: font.baseSize, color: colors.surfaceDark, lineHeight: font.lineHeight, paddingTop: 8, borderTopWidth: 0.5, borderTopColor: colors.greyMid, borderTopStyle: "solid", marginTop: spacing.section },
+
+    pageFooter:  { position: "absolute", left: theme.page.paddingHorizontal, right: theme.page.paddingHorizontal, bottom: 24, flexDirection: "row", justifyContent: footer.align === "center" ? "center" : "space-between", fontSize: font.metaSize, color: colors.grey, paddingTop: 6, ...(footer.showBar && { borderTopWidth: 0.5, borderTopColor: colors.greyMid, borderTopStyle: "solid" as const }), fontStyle: footer.italic ? "italic" : "normal", gap: footer.align === "center" ? 8 : 0 },
+  });
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
 export interface CrossHireInvoiceOwner {
-  /** Required — falls back to workspaceName if absent */
   businessName?: string;
   addressLine1?: string | null;
   addressLine2?: string | null;
@@ -97,9 +96,10 @@ export interface CrossHireInvoiceOwner {
   vatNumber?:    string | null;
   contactEmail?: string | null;
   contactPhone?: string | null;
+  bankDetails?:  string | null;
+  logoUrl?:      string | null;
 }
 
-/** Numeric coming back from Prisma can be `Decimal | number | string`. */
 type DecimalLike = { toString(): string } | number | string;
 
 export interface CrossHireInvoiceItem {
@@ -111,10 +111,16 @@ export interface CrossHireInvoiceItem {
 
 export interface CrossHireInvoiceData {
   workspaceName: string;
-  /** Optional richer owner block (when workspace settings start storing this). */
   owner?: CrossHireInvoiceOwner;
-  /** Optional VAT rate (e.g. 0.2 for 20%). When undefined, no VAT line is shown. */
+  /** VAT rate as decimal (0.2 for 20%). Omit/zero to suppress the VAT line. */
   vatRate?: number;
+  /** Visual template — driven by /settings/invoicing. Defaults to modern. */
+  template?: PdfTemplate;
+  /** Free-text payment terms (e.g. "Net 30 from invoice date"). Falls back to "Net X days" when paymentTermsDays supplied. */
+  paymentTermsText?: string | null;
+  paymentTermsDays?: number | null;
+  /** Free-text footer block printed below the totals. */
+  invoiceFooter?: string | null;
   event: {
     id:             string;
     invoiceNumber:  string | null;
@@ -140,8 +146,6 @@ export interface CrossHireInvoiceData {
   };
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-
 function joinAddress(parts: Array<string | null | undefined>): string[] {
   return parts.map((p) => (p ?? "").trim()).filter((p) => p.length > 0);
 }
@@ -149,6 +153,9 @@ function joinAddress(parts: Array<string | null | undefined>): string[] {
 // ── Document ──────────────────────────────────────────────────────────────
 
 function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
+  const theme = getPdfTheme(data.template);
+  const s     = buildStyles(theme);
+
   const { workspaceName, owner, event, vatRate } = data;
   const generated = new Date();
 
@@ -170,7 +177,6 @@ function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
 
   const ownerName    = owner?.businessName?.trim() || workspaceName;
   const ownerAddress = joinAddress([owner?.addressLine1, owner?.addressLine2, owner?.city, owner?.county, owner?.postcode, owner?.country]);
-
   const customerAddress = joinAddress([
     event.hireCustomer.addressLine1, event.hireCustomer.addressLine2,
     event.hireCustomer.city, event.hireCustomer.county,
@@ -178,6 +184,12 @@ function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
   ]);
 
   const invoiceNo = event.invoiceNumber ?? event.id.slice(-8).toUpperCase();
+
+  // Compute the "terms" display: prefer free-text, otherwise "Net X days"
+  const termsLine =
+    data.paymentTermsText?.trim()
+      ? data.paymentTermsText.trim()
+      : (data.paymentTermsDays != null ? `Net ${data.paymentTermsDays} days` : null);
 
   return (
     <Document
@@ -187,9 +199,11 @@ function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
     >
       <Page size="A4" style={s.page} wrap>
         <View>
-          <View style={s.headerBar} fixed />
+          {theme.header.showBar && <View style={s.headerBar} fixed />}
           <View style={s.brandRow}>
-            <Text style={s.brandName}>LOGITRAK</Text>
+            {owner?.logoUrl
+              ? <Image src={owner.logoUrl} style={{ height: theme.header.logoStyle === "inline" ? 16 : 24, maxWidth: 140, objectFit: "contain" }} />
+              : <Text style={s.brandName}>{ownerName.toUpperCase()}</Text>}
             <Text style={s.documentKind}>Invoice</Text>
           </View>
           <Text style={s.title}>Invoice #{invoiceNo}</Text>
@@ -232,10 +246,12 @@ function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
               <Text style={s.metaLabel}>Days</Text>
               <Text style={s.metaValue}>{days}</Text>
             </View>
-            <View>
-              <Text style={s.metaLabel}>Terms</Text>
-              <Text style={s.metaValue}>{event.termsOfHire.replace(/\s*\([^)]*\)$/, "")}</Text>
-            </View>
+            {termsLine && (
+              <View>
+                <Text style={s.metaLabel}>Payment terms</Text>
+                <Text style={s.metaValue}>{termsLine}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -258,9 +274,9 @@ function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
               <Text style={[s.td, { width: 70, fontFamily: "Courier", fontWeight: 700 }]}>{item.equipment.serial}</Text>
               <View style={{ flex: 2 }}>
                 <Text style={s.td}>{item.equipment.name}</Text>
-                {item.notes && <Text style={[s.td, { color: GREY, fontSize: 9 }]}>{item.notes}</Text>}
+                {item.notes && <Text style={[s.td, { color: theme.colors.grey, fontSize: theme.font.metaSize }]}>{item.notes}</Text>}
                 {item.lineDiscount > 0 && (
-                  <Text style={[s.td, { color: GREY, fontSize: 9 }]}>
+                  <Text style={[s.td, { color: theme.colors.grey, fontSize: theme.font.metaSize }]}>
                     {item.discountPct.toFixed(1)}% weekly discount (−{fmtMoney(item.lineDiscount)})
                   </Text>
                 )}
@@ -288,7 +304,7 @@ function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
               <Text style={s.totalLabel}>Subtotal</Text>
               <Text style={s.totalValue}>{fmtMoney(subtotal)}</Text>
             </View>
-            {vatRate != null && (
+            {vatRate != null && vatRate > 0 && (
               <View style={s.totalRow}>
                 <Text style={s.totalLabel}>VAT ({Math.round(vatRate * 100)}%)</Text>
                 <Text style={s.totalValue}>{fmtMoney(vat)}</Text>
@@ -308,7 +324,20 @@ function InvoiceDocument({ data }: { data: CrossHireInvoiceData }) {
           </View>
         )}
 
-        <View style={s.footer} fixed>
+        {owner?.bankDetails && (
+          <View style={s.section}>
+            <Text style={s.notesTitle}>Payment</Text>
+            <Text style={s.notesText}>{owner.bankDetails}</Text>
+          </View>
+        )}
+
+        {data.invoiceFooter && (
+          <View style={s.footerBlock}>
+            <Text style={s.notesText}>{data.invoiceFooter}</Text>
+          </View>
+        )}
+
+        <View style={s.pageFooter} fixed>
           <Text>{ownerName} · Invoice #{invoiceNo}</Text>
           <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
           <Text>Generated {fmtDate(generated)}</Text>

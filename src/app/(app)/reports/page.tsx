@@ -282,6 +282,7 @@ function _EquipmentExpandedDetail({ row, workspaceId }: { row: Record<string, un
 export default function ReportsPage() {
   const { workspaceId, workspaceName } = useWorkspace();
   const { data: me } = trpc.user.me.useQuery();
+  const { data: documentTemplate } = trpc.workspace.getDocumentTemplate.useQuery({ workspaceId });
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("available");
   const [filters, setFilters] = useState<ReportFilters>({});
@@ -711,6 +712,7 @@ export default function ReportsPage() {
                     workspaceName,
                     generatedBy:   me?.displayName ?? me?.email ?? "Unknown",
                     generatedAt:   new Date(),
+                    template:      documentTemplate?.documentTemplate,
                     columns:       pdfColumns,
                     rows,
                   },

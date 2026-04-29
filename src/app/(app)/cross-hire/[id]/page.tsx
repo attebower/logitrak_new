@@ -50,6 +50,11 @@ export default function CrossHireDetailPage() {
     id,
   });
 
+  // Pull the workspace business profile so PDFs can populate From / header.
+  const { data: business } = trpc.workspace.getBusinessProfile.useQuery({ workspaceId });
+  const { data: invoiceSettings } = trpc.workspace.getInvoiceSettings.useQuery({ workspaceId });
+  const { data: documentTemplate } = trpc.workspace.getDocumentTemplate.useQuery({ workspaceId });
+
   const cancelMut = trpc.crossHire["crossHire.cancel"].useMutation({
     onSuccess: () => {
       // The event has been deleted server-side. Drop it from the list cache
@@ -140,17 +145,43 @@ export default function CrossHireDetailPage() {
     event.hireCustomer.postcode, event.hireCustomer.country,
   ].filter((s): s is string => !!s && s.trim().length > 0).join(", ");
 
+  const owner = business
+    ? {
+        businessName:  business.businessName  ?? undefined,
+        addressLine1:  business.addressLine1,
+        addressLine2:  business.addressLine2,
+        city:          business.city,
+        county:        business.county,
+        postcode:      business.postcode,
+        country:       business.country,
+        vatNumber:     business.vatNumber,
+        contactEmail:  business.businessEmail,
+        contactPhone:  business.businessPhone,
+        bankDetails:   business.bankDetails,
+        logoUrl:       business.logoUrl,
+      }
+    : undefined;
+
   function downloadInvoice() {
     if (!event) return;
     void downloadCrossHireInvoicePdf(
-      { workspaceName, event },
+      {
+        workspaceName,
+        owner,
+        event,
+        template:         invoiceSettings?.invoiceTemplate,
+        vatRate:          invoiceSettings ? parseFloat(invoiceSettings.vatRate) : undefined,
+        paymentTermsDays: invoiceSettings?.paymentTermsDays,
+        paymentTermsText: invoiceSettings?.paymentTermsText,
+        invoiceFooter:    invoiceSettings?.invoiceFooter,
+      },
       `Invoice-${event.invoiceNumber ?? event.id.slice(-8)}.pdf`,
     );
   }
   function downloadEquipmentList() {
     if (!event) return;
     void downloadCrossHireEquipmentListPdf(
-      { workspaceName, event },
+      { workspaceName, event, template: documentTemplate?.documentTemplate },
       `Equipment-List-${event.hireCustomer.productionName.replace(/[^a-z0-9]+/gi, "-")}.pdf`,
     );
   }

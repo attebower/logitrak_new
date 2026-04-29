@@ -26,6 +26,30 @@ model Workspace {
   lastLabelSize        String?
   lastLabelDesign      String?
   printerIp            String?
+  // ── Business profile (used for invoice From block, equipment list header) ──
+  businessName         String?
+  addressLine1         String?
+  addressLine2         String?
+  city                 String?
+  county               String?
+  postcode             String?
+  country              String?
+  vatNumber            String?
+  businessEmail        String?
+  businessPhone        String?
+  bankDetails          String?               @db.Text
+  logoUrl              String?
+  // ── Invoicing settings ──
+  invoicePrefix        String                @default("INV")           // e.g. "MCC" → MCC-2026-0001
+  invoiceTemplate      InvoiceTemplate       @default(modern)
+  vatRate              Decimal               @default(0.20) @db.Decimal(5, 4) // 0.2000 = 20%
+  paymentTermsDays     Int                   @default(30)
+  paymentTermsText     String?                                          // free-text override
+  invoiceFooter        String?               @db.Text                   // free-text footer block
+  lastInvoiceSeqYear   Int?                                             // year the seq last rolled in
+  lastInvoiceSeq       Int                   @default(0)                // monotonically increasing per year
+  // ── Document template (drives Equipment List / Reports / Set Snapshot) ──
+  documentTemplate     DocumentTemplate      @default(modern)
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   activityEvents       ActivityEvent[]
@@ -109,6 +133,7 @@ model WorkspaceUser {
   updatedAt   DateTime      @updatedAt
   user        UserProfile   @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectMemberships ProjectMembership[]
 
   @@unique([workspaceId, userId])
   @@map("workspace_users")
@@ -125,10 +150,31 @@ model WorkspaceInvitation {
   acceptedAt  DateTime?
   createdAt   DateTime      @default(now())
   nickname    String?
+  // Optional list of project IDs the invitee should be scoped to. Empty/null
+  // means workspace-wide (admin) or unscoped (operator with no projects yet).
+  projectIds  String[]      @default([])
+  emailSentAt    DateTime?
+  emailSendCount Int           @default(0)
   invitedBy   UserProfile   @relation(fields: [invitedById], references: [id])
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@map("workspace_invitations")
+}
+
+/// Joins a WorkspaceUser to a specific Project. Presence of a row grants the
+/// user access to that project. An admin/owner has implicit access to every
+/// project in the workspace and doesn't need rows here.
+model ProjectMembership {
+  id              String        @id @default(cuid())
+  workspaceUserId String
+  projectId       String
+  createdAt       DateTime      @default(now())
+  workspaceUser   WorkspaceUser @relation(fields: [workspaceUserId], references: [id], onDelete: Cascade)
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceUserId, projectId])
+  @@index([projectId])
+  @@map("project_memberships")
 }
 
 model EquipmentCategory {
@@ -376,6 +422,7 @@ model Project {
   eventLocation String?
   projectSets   ProjectSet[]
   onLocations   OnLocation[]
+  memberships   ProjectMembership[]
   studio        Studio?       @relation(fields: [studioId], references: [id])
   workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -620,4 +667,16 @@ enum CrossHireEventStatus {
   active
   returned
   cancelled
+}
+
+enum InvoiceTemplate {
+  modern
+  classic
+  minimal
+}
+
+enum DocumentTemplate {
+  modern
+  classic
+  minimal
 }

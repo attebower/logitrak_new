@@ -9,14 +9,7 @@
 import {
   Document, Page, Text, View, StyleSheet, pdf,
 } from "@react-pdf/renderer";
-
-// ── Palette (mirrors SetSnapshotPdf / Tailwind config) ───────────────────
-
-const BRAND = "#2563EB";
-const SURFACE_DARK = "#0F172A";
-const GREY = "#64748B";
-const GREY_MID = "#CBD5E1";
-const GREY_LIGHT = "#F1F5F9";
+import { getPdfTheme, type PdfTemplate, type PdfTheme } from "./PdfThemes";
 
 function fmtDateTime(d: Date | string | null): string {
   if (!d) return "—";
@@ -26,59 +19,31 @@ function fmtDateTime(d: Date | string | null): string {
   });
 }
 
-// ── Styles (mirrors SetSnapshotPdf) ───────────────────────────────────────
-
-const s = StyleSheet.create({
-  page: {
-    paddingTop: 48, paddingBottom: 56, paddingHorizontal: 48,
-    fontFamily: "Helvetica", fontSize: 10, color: SURFACE_DARK,
-    backgroundColor: "#FFFFFF",
-  },
-  headerBar:    { height: 4, backgroundColor: BRAND, marginBottom: 20 },
-  brandRow:     { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
-  brandName:    { fontSize: 12, color: BRAND, fontWeight: 700, letterSpacing: 1.2 },
-  documentKind: { fontSize: 9, color: GREY, textTransform: "uppercase", letterSpacing: 1.2 },
-  title:        { fontSize: 24, fontWeight: 700, marginTop: 4 },
-  subtitle:     { fontSize: 12, color: GREY, marginTop: 4 },
-
-  metaRow: {
-    flexDirection: "row", flexWrap: "wrap",
-    gap: 16, marginTop: 18, paddingTop: 14,
-    borderTopWidth: 1, borderTopColor: GREY_MID, borderTopStyle: "solid",
-  },
-  metaLabel: { fontSize: 8, color: GREY, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 },
-  metaValue: { fontSize: 11, color: SURFACE_DARK },
-
-  section:       { marginTop: 24 },
-  sectionHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    marginBottom: 10, paddingBottom: 6,
-    borderBottomWidth: 1, borderBottomColor: GREY_MID, borderBottomStyle: "solid",
-  },
-  sectionTitle: { fontSize: 14, fontWeight: 700, color: SURFACE_DARK },
-  sectionCount: { fontSize: 10, color: GREY },
-
-  tableHeader: {
-    flexDirection: "row", backgroundColor: GREY_LIGHT,
-    paddingVertical: 6, paddingHorizontal: 8,
-  },
-  tableRow: {
-    flexDirection: "row", paddingVertical: 6, paddingHorizontal: 8,
-    borderBottomWidth: 0.5, borderBottomColor: GREY_MID, borderBottomStyle: "solid",
-  },
-  th: { fontSize: 9, color: GREY, textTransform: "uppercase", fontWeight: 700, letterSpacing: 0.5 },
-  td: { fontSize: 10, color: SURFACE_DARK },
-
-  empty: { fontSize: 10, color: GREY, fontStyle: "italic", paddingVertical: 10 },
-
-  footer: {
-    position: "absolute", left: 48, right: 48, bottom: 24,
-    flexDirection: "row", justifyContent: "space-between",
-    fontSize: 8, color: GREY,
-    paddingTop: 6,
-    borderTopWidth: 0.5, borderTopColor: GREY_MID, borderTopStyle: "solid",
-  },
-});
+function buildStyles(theme: PdfTheme) {
+  const { colors, page, font, spacing, table, footer } = theme;
+  return StyleSheet.create({
+    page: { paddingTop: page.paddingTop, paddingBottom: page.paddingBottom + 16, paddingHorizontal: page.paddingHorizontal, fontFamily: font.family, fontSize: font.baseSize, color: colors.surfaceDark, backgroundColor: "#FFFFFF" },
+    headerBar:    { height: theme.header.barHeight, backgroundColor: colors.brand, marginBottom: 20 },
+    brandRow:     { flexDirection: "row", alignItems: "center", justifyContent: theme.header.align === "center" ? "center" : "space-between", marginBottom: 6, gap: theme.header.align === "center" ? 12 : 0 },
+    brandName:    { fontSize: font.baseSize + 2, color: colors.brand, fontWeight: 700, letterSpacing: 1.2 },
+    documentKind: { fontSize: font.metaSize, color: colors.grey, textTransform: "uppercase", letterSpacing: 1.2 },
+    title:        { fontSize: font.titleSize, fontWeight: 700, marginTop: 4, textAlign: theme.header.align },
+    subtitle:     { fontSize: font.baseSize + 2, color: colors.grey, marginTop: 4, textAlign: theme.header.align },
+    metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 16, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.greyMid, borderTopStyle: "solid" },
+    metaLabel: { fontSize: font.metaSize - 1, color: colors.grey, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 },
+    metaValue: { fontSize: font.baseSize + 1, color: colors.surfaceDark },
+    section:       { marginTop: spacing.section },
+    sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.greyMid, borderBottomStyle: "solid" },
+    sectionTitle: { fontSize: font.baseSize + 4, fontWeight: 700, color: colors.surfaceDark, textTransform: table.headerCase === "upper" ? "uppercase" : "none", letterSpacing: table.headerCase === "upper" ? 1 : 0 },
+    sectionCount: { fontSize: font.baseSize, color: colors.grey },
+    tableHeader: { flexDirection: "row", backgroundColor: table.headerBackground, paddingVertical: spacing.row - 2, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: table.rowBorderColor, borderBottomStyle: "solid" },
+    tableRow: { flexDirection: "row", paddingVertical: spacing.row - 2, paddingHorizontal: 8, ...(table.rowBorder !== "none" && { borderBottomWidth: 0.5, borderBottomColor: colors.greyMid, borderBottomStyle: "solid" as const }) },
+    th: { fontSize: font.metaSize, color: table.headerColor, textTransform: table.headerCase === "upper" ? "uppercase" : "none", fontWeight: 700, letterSpacing: 0.5 },
+    td: { fontSize: font.baseSize, color: colors.surfaceDark },
+    empty: { fontSize: font.baseSize, color: colors.grey, fontStyle: "italic", paddingVertical: 10 },
+    footer: { position: "absolute", left: page.paddingHorizontal, right: page.paddingHorizontal, bottom: 24, flexDirection: "row", justifyContent: footer.align === "center" ? "center" : "space-between", fontSize: font.metaSize, color: colors.grey, paddingTop: 6, ...(footer.showBar && { borderTopWidth: 0.5, borderTopColor: colors.greyMid, borderTopStyle: "solid" as const }), fontStyle: footer.italic ? "italic" : "normal", gap: footer.align === "center" ? 8 : 0 },
+  });
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -101,18 +66,22 @@ export interface ReportPdfData {
   /** Who generated the PDF (display name / email) */
   generatedBy:   string;
   generatedAt:   Date;
+  /** Visual template — driven by /settings/documents. Defaults to modern. */
+  template?: PdfTemplate;
   columns: ReportPdfColumn[];
   rows:    Record<string, unknown>[];
 }
 
 // ── Components ────────────────────────────────────────────────────────────
 
-function Header({ data }: { data: ReportPdfData }) {
+type Styles = ReturnType<typeof buildStyles>;
+
+function Header({ data, theme, s }: { data: ReportPdfData; theme: PdfTheme; s: Styles }) {
   return (
     <View>
-      <View style={s.headerBar} fixed />
+      {theme.header.showBar && <View style={s.headerBar} fixed />}
       <View style={s.brandRow}>
-        <Text style={s.brandName}>LOGITRAK</Text>
+        <Text style={s.brandName}>{data.workspaceName.toUpperCase()}</Text>
         <Text style={s.documentKind}>Report</Text>
       </View>
       <Text style={s.title}>{data.title}</Text>
@@ -142,7 +111,7 @@ function Header({ data }: { data: ReportPdfData }) {
   );
 }
 
-function Table({ data }: { data: ReportPdfData }) {
+function Table({ data, s }: { data: ReportPdfData; s: Styles }) {
   function colStyle(c: ReportPdfColumn) {
     return c.width != null
       ? { width: c.width, paddingRight: 8 }
@@ -184,7 +153,7 @@ function Table({ data }: { data: ReportPdfData }) {
   );
 }
 
-function Footer({ data }: { data: ReportPdfData }) {
+function Footer({ data, s }: { data: ReportPdfData; s: Styles }) {
   return (
     <View style={s.footer} fixed>
       <Text>{data.workspaceName} · {data.title}</Text>
@@ -195,6 +164,8 @@ function Footer({ data }: { data: ReportPdfData }) {
 }
 
 function ReportDocument({ data }: { data: ReportPdfData }) {
+  const theme = getPdfTheme(data.template);
+  const s     = buildStyles(theme);
   return (
     <Document
       title={`${data.workspaceName} — ${data.title}`}
@@ -203,9 +174,9 @@ function ReportDocument({ data }: { data: ReportPdfData }) {
       producer="LogiTrak"
     >
       <Page size="A4" style={s.page} wrap>
-        <Header data={data} />
-        <Table data={data} />
-        <Footer data={data} />
+        <Header data={data} theme={theme} s={s} />
+        <Table  data={data} s={s} />
+        <Footer data={data} s={s} />
       </Page>
     </Document>
   );
