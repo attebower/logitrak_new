@@ -13,7 +13,7 @@ import { downloadCrossHireEquipmentListPdf } from "@/lib/pdf/CrossHireEquipmentL
 import { toast } from "sonner";
 import {
   ArrowLeft, XCircle, AlertTriangle,
-  User, Phone, Mail, MapPin, FileText, ListChecks, Calendar, PoundSterling,
+  User, Phone, Mail, MapPin, FileText, ListChecks,
 } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
