@@ -20,11 +20,12 @@ import { cn } from "@/lib/utils";
 
 // Top-border colour variants — maps to spec stat card colours
 const colorMap = {
-  blue:  "before:bg-brand-blue",
-  green: "before:bg-status-green",
-  amber: "before:bg-status-amber",
-  red:   "before:bg-status-red",
-  teal:  "before:bg-status-teal",
+  blue:   "before:bg-brand-blue",
+  green:  "before:bg-status-green",
+  amber:  "before:bg-status-amber",
+  red:    "before:bg-status-red",
+  teal:   "before:bg-status-teal",
+  violet: "before:bg-violet-500",
 } as const;
 
 const changeColorMap = {
@@ -39,8 +40,8 @@ export type StatCardChangeColor = keyof typeof changeColorMap;
 export interface StatCardProps {
   /** Top border accent colour */
   color: StatCardColor;
-  /** Emoji or icon rendered ghost top-right */
-  icon?: string;
+  /** Icon rendered ghost top-right */
+  icon?: React.ReactNode;
   /** Uppercase label — e.g. "Total Assets" */
   label: string;
   /** Large number value */
@@ -65,7 +66,7 @@ export function StatCard({
     <div
       className={cn(
         // Card base
-        "relative overflow-hidden rounded-card bg-white border border-grey-mid p-[18px_20px]",
+        "relative overflow-hidden rounded-card bg-white border border-grey-mid p-4",
         // Top border via ::before pseudo — Tailwind pseudo classes
         "before:absolute before:top-0 before:left-0 before:right-0 before:h-[3px] before:content-['']",
         colorMap[color],
@@ -75,7 +76,7 @@ export function StatCard({
       {/* Ghost icon — top-right */}
       {icon && (
         <span
-          className="absolute top-4 right-4 text-[22px] opacity-20 select-none"
+          className="absolute top-3 right-4 opacity-20 select-none"
           aria-hidden
         >
           {icon}
@@ -83,7 +84,7 @@ export function StatCard({
       )}
 
       {/* Label */}
-      <p className="text-caption text-grey uppercase tracking-[0.03125rem] mb-1.5">
+      <p className="text-caption text-grey uppercase tracking-[0.03125rem] mb-1">
         {label}
       </p>
 
@@ -94,7 +95,7 @@ export function StatCard({
 
       {/* Change / subtext */}
       {change && (
-        <p className={cn("text-caption mt-1", changeColorMap[changeColor])}>
+        <p className={cn("text-caption mt-0.5", changeColorMap[changeColor])}>
           {change}
         </p>
       )}
@@ -102,10 +103,10 @@ export function StatCard({
   );
 }
 
-// Convenience preset — matches the 4-up dashboard stat grid
+// Convenience preset — matches the dashboard stat grid (auto-fits cards)
 export function StatGrid({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-6">
       {children}
     </div>
   );

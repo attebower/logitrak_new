@@ -17,11 +17,12 @@ const damageReportRouter = router({
   create: workspaceProcedure
     .input(
       z.object({
-        workspaceId: z.string(),
-        equipmentId: z.string(),
-        description: z.string().min(1),
-        damageLocation: z.string().optional(),
-        reportedAt: z.date().optional(),
+        workspaceId:    z.string(),
+        equipmentId:    z.string(),
+        description:    z.string().min(1),
+        damageLocation: z.string().optional(), // where on set
+        itemLocation:   z.string().optional(), // location on the physical item
+        reportedAt:     z.date().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -44,24 +45,55 @@ const damageReportRouter = router({
 
       const userId = ctx.session.user.id;
       const shortDesc = input.description.slice(0, 50);
+      const wasCheckedOut = equipment.status === "checked_out";
 
       return ctx.prisma.$transaction(async (tx) => {
         const report = await tx.damageReport.create({
           data: {
-            workspaceId: ctx.workspaceId!,
-            equipmentId: input.equipmentId,
-            reporterId: userId,
-            description: input.description,
+            workspaceId:    ctx.workspaceId!,
+            equipmentId:    input.equipmentId,
+            reporterId:     userId,
+            description:    input.description,
             damageLocation: input.damageLocation,
-            reportedAt: input.reportedAt ?? new Date(),
+            itemLocation:   input.itemLocation,
+            reportedAt:     input.reportedAt ?? new Date(),
           },
         });
 
-        // BUG-010: include workspaceId atomically
+        // If item was checked out, force a check-in before entering damage workflow.
+        // An item cannot be both checked_out and damaged — it must be returned first.
+        if (wasCheckedOut) {
+          await tx.checkEvent.create({
+            data: {
+              workspaceId: ctx.workspaceId!,
+              equipmentId: input.equipmentId,
+              userId,
+              eventType: "check_in",
+            },
+          });
+        }
+
+        // Set damageStatus to damaged; also clear checked_out status if it was out
         await tx.equipment.updateMany({
           where: { id: input.equipmentId, workspaceId: ctx.workspaceId! },
-          data: { damageStatus: "damaged" },
+          data: {
+            damageStatus: "damaged",
+            ...(wasCheckedOut && { status: "available" }),
+          },
         });
+
+        if (wasCheckedOut) {
+          await tx.activityEvent.create({
+            data: {
+              workspaceId: ctx.workspaceId!,
+              actorId: userId,
+              eventType: "check_in",
+              description: `Auto checked-in on damage report`,
+              entityType: "equipment",
+              entityId: input.equipmentId,
+            },
+          });
+        }
 
         await tx.activityEvent.create({
           data: {

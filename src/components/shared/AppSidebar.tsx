@@ -75,11 +75,10 @@ export function AppSidebar({
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-2.5 px-5 py-[9px] text-[13px] font-medium",
-                    "border-l-[3px] transition-all duration-150",
+                    "flex items-center gap-2.5 px-5 py-[9px] text-[13px] font-medium transition-colors duration-150",
                     isActive
-                      ? "bg-brand-blue/10 text-white border-brand-blue"
-                      : "text-slate-400 border-transparent hover:bg-white/[0.04] hover:text-slate-300"
+                      ? "text-white font-semibold"
+                      : "text-white/90 hover:text-white"
                   )}
                 >
                   <span className="w-4 text-center text-sm leading-none" aria-hidden>

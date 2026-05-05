@@ -41,19 +41,18 @@ export interface ColumnDef<T = Record<string, unknown>> {
 // ── Component ─────────────────────────────────────────────────────────────
 
 export interface ReportTableProps<T extends Record<string, unknown>> {
-  /** Column definitions */
-  columns:     ColumnDef<T>[];
-  /** Row data — each row must have a unique `id` field */
-  rows:        T[];
-  /** Card title shown in the table header */
-  title:       string;
-  /** Called when the export button is clicked — implement CSV logic in parent */
-  onExport?:   () => void;
-  /** Export button label (default: "Export CSV") */
+  columns:      ColumnDef<T>[];
+  rows:         T[];
+  title:        string;
+  onExport?:    () => void;
   exportLabel?: string;
-  /** Empty state message */
+  /** Optional: PDF export handler, rendered as a secondary button next to CSV */
+  onExportPdf?: () => void;
+  pdfLabel?:    string;
   emptyMessage?: string;
-  className?:  string;
+  className?:   string;
+  /** Optional: called when a row is clicked */
+  onRowClick?: (row: T) => void;
 }
 
 export function ReportTable<T extends Record<string, unknown>>({
@@ -62,8 +61,11 @@ export function ReportTable<T extends Record<string, unknown>>({
   title,
   onExport,
   exportLabel = "Export CSV",
+  onExportPdf,
+  pdfLabel = "Export PDF",
   emptyMessage = "No data to display",
   className,
+  onRowClick,
 }: ReportTableProps<T>) {
   const [sortKey, setSortKey]   = useState<string | null>(null);
   const [sortDir, setSortDir]   = useState<SortDirection>("asc");
@@ -92,15 +94,30 @@ export function ReportTable<T extends Record<string, unknown>>({
   return (
     <div className={cn("bg-white rounded-card border border-grey-mid overflow-hidden", className)}>
       {/* ── Table header bar ── */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-grey-mid">
-        <span className="text-[14px] font-bold text-surface-dark">{title}</span>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-grey-mid">
+        <span className="text-[12px] font-semibold text-grey uppercase tracking-wider">{title}</span>
+        <div className="flex items-center gap-3">
           <span className="text-[12px] text-grey">
             {rows.length} {rows.length === 1 ? "result" : "results"}
           </span>
           {onExport && (
-            <Button variant="secondary" size="sm" onClick={onExport}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onExport}
+              className="bg-brand-blue-light text-brand-blue hover:bg-brand-blue-mid"
+            >
               ↓ {exportLabel}
+            </Button>
+          )}
+          {onExportPdf && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onExportPdf}
+              className="bg-brand-blue-light text-brand-blue hover:bg-brand-blue-mid"
+            >
+              ↓ {pdfLabel}
             </Button>
           )}
         </div>
@@ -108,15 +125,15 @@ export function ReportTable<T extends Record<string, unknown>>({
 
       {/* ── Table ── */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
+        <table className="w-full border-collapse table-fixed">
           <thead>
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.key}
                   className={cn(
-                    "bg-grey-light px-4 py-2.5 text-left border-b border-grey-mid",
-                    "text-caption text-grey uppercase tracking-[0.03125rem] font-bold",
+                    "bg-grey-light px-4 py-3 text-left border-b border-grey-mid whitespace-nowrap",
+                    "text-[11px] text-grey uppercase tracking-wider font-semibold",
                     col.sortable !== false && "cursor-pointer select-none hover:text-surface-dark",
                     col.width,
                     col.align === "right" && "text-right",
@@ -154,7 +171,11 @@ export function ReportTable<T extends Record<string, unknown>>({
               sortedRows.map((row, i) => (
                 <tr
                   key={(row.id as string) ?? i}
-                  className="border-b border-grey-mid last:border-b-0 hover:bg-grey-light/70 transition-colors"
+                  onClick={() => onRowClick?.(row)}
+                  className={cn(
+                    "border-b border-grey-mid last:border-b-0 transition-colors hover:bg-brand-blue/[0.04]",
+                    onRowClick && "cursor-pointer"
+                  )}
                 >
                   {columns.map((col) => {
                     const value = row[col.key];
@@ -162,7 +183,8 @@ export function ReportTable<T extends Record<string, unknown>>({
                       <td
                         key={col.key}
                         className={cn(
-                          "px-4 py-[11px] text-[12px] text-surface-dark",
+                          "px-4 py-3 text-[13px] text-surface-dark",
+                          col.key !== "name" && col.key !== "description" && col.key !== "location" && "whitespace-nowrap",
                           col.align === "right" && "text-right",
                           col.align === "center" && "text-center"
                         )}

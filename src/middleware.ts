@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Routes restricted to Admin role only
-const ADMIN_ROUTES = ["/admin", "/team", "/settings"];
+const ADMIN_ROUTES = ["/admin", "/team", "/settings", "/locations"];
 // Routes where write actions are blocked for read-only role
 // (enforced at the API layer by Sage; middleware only handles page-level gating)
 
@@ -34,29 +34,38 @@ export async function middleware(request: NextRequest) {
                       pathname.startsWith("/auth");
   const isPublicRoute = pathname === "/" ||
                         pathname.startsWith("/pricing") ||
-                        pathname.startsWith("/about");
+                        pathname.startsWith("/about") ||
+                        pathname.startsWith("/accept-invite") ||
+                        pathname.startsWith("/preview-onboarding") ||
+                        pathname.startsWith("/preview-equipment-guide") ||
+                        pathname.startsWith("/preview-checkinout-guide") ||
+                        pathname.startsWith("/preview-dashboard");
 
   if (!user && !isAuthRoute && !isPublicRoute) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
-  // TODO Sprint 2: fetch workspace role from DB and enforce:
-  // - ADMIN_ROUTES: redirect non-admin to /dashboard with ?error=unauthorized
-  // - Write actions: enforced at tRPC layer by Sage
-  // For now, stub: if user has app_metadata.role === "read_only" or "operator",
-  // block admin routes.
+  // Enforce admin route gating using the workspace role from the DB.
+  // app_metadata.role is not populated — roles live in WorkspaceUser.role.
   if (user) {
-    const role = (user.app_metadata?.role as string | undefined) ?? "member";
     const isAdminRoute = ADMIN_ROUTES.some(r => request.nextUrl.pathname.startsWith(r));
-    if (isAdminRoute && role === "operator") {
-      const url = new URL("/dashboard", request.url);
-      url.searchParams.set("error", "unauthorized");
-      return NextResponse.redirect(url);
-    }
-    if (isAdminRoute && role === "read_only") {
-      const url = new URL("/dashboard", request.url);
-      url.searchParams.set("error", "unauthorized");
-      return NextResponse.redirect(url);
+    if (isAdminRoute) {
+      const { data: membership } = await supabase
+        .from("workspace_users")
+        .select("role")
+        .eq("userId", user.id)
+        .eq("isActive", true)
+        .order("createdAt", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      const role = membership?.role ?? null;
+      const ADMIN_ROLES = ["owner", "admin", "manager"];
+      if (!role || !ADMIN_ROLES.includes(role)) {
+        const url = new URL("/dashboard", request.url);
+        url.searchParams.set("error", "unauthorized");
+        return NextResponse.redirect(url);
+      }
     }
   }
 

@@ -21,6 +21,7 @@ export const checkEventRouter = router({
         productionName: z.string().optional(),
         studioId: z.string().optional(),
         stageId: z.string().optional(),
+        onLocationId: z.string().optional(),
         setId: z.string().optional(),
         positionType: z
           .enum([
@@ -105,6 +106,7 @@ export const checkEventRouter = router({
               productionName: input.productionName,
               studioId: input.studioId,
               stageId: input.stageId,
+              onLocationId: input.onLocationId,
               setId: input.setId,
               positionType: input.positionType,
               positionDescription: input.positionDescription,
@@ -188,6 +190,7 @@ export const checkEventRouter = router({
       }
 
       const userId = ctx.session.user.id;
+      const now    = new Date();
 
       await ctx.prisma.$transaction(async (tx) => {
         for (const item of items) {
@@ -201,17 +204,53 @@ export const checkEventRouter = router({
           });
 
           // BUG-010: include workspaceId in update where clause (atomic ownership check)
+          // If item has an active damage status, keep it as-is (status stays available
+          // but damageStatus remains damaged/under_repair — do not silently clear damage).
+          // Only set status: available; damage must be resolved via the repair flow.
           await tx.equipment.updateMany({
             where: { id: item.id, workspaceId: ctx.workspaceId! },
             data: { status: "available" },
           });
+
+          // Reconcile any active cross-hire holding this item: mark its
+          // CrossHireItem returned, and if it was the last outstanding item
+          // on that event, flip the event itself to "returned".
+          const activeChItem = await tx.crossHireItem.findFirst({
+            where: {
+              equipmentId: item.id,
+              returnedAt:  null,
+              crossHireEvent: { status: "active", workspaceId: ctx.workspaceId! },
+            },
+            select: { id: true, crossHireEventId: true },
+          });
+          let returnedFromCrossHire = false;
+          if (activeChItem) {
+            await tx.crossHireItem.update({
+              where: { id: activeChItem.id },
+              data:  { returnedAt: now },
+            });
+            const remaining = await tx.crossHireItem.count({
+              where: { crossHireEventId: activeChItem.crossHireEventId, returnedAt: null },
+            });
+            if (remaining === 0) {
+              await tx.crossHireEvent.update({
+                where: { id: activeChItem.crossHireEventId },
+                data:  { status: "returned", returnedAt: now },
+              });
+            }
+            returnedFromCrossHire = true;
+          }
 
           await tx.activityEvent.create({
             data: {
               workspaceId: ctx.workspaceId!,
               actorId: userId,
               eventType: "check_in",
-              description: "Checked in",
+              description: returnedFromCrossHire
+                ? "Returned from cross hire"
+                : item.damageStatus && item.damageStatus !== "repaired"
+                  ? `Checked in (damage status: ${item.damageStatus})`
+                  : "Checked in",
               entityType: "equipment",
               entityId: item.id,
             },

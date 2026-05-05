@@ -11,8 +11,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  // Base styles — matches spec: inline-flex, dot prefix via ::before, rounded pill
-  "inline-flex items-center gap-1 rounded-badge px-2 py-0.5 text-[11px] font-semibold before:content-['●'] before:text-[8px]",
+  // Base styles
+  "inline-flex items-center gap-1 rounded-badge px-2 py-0.5 text-[11px] font-semibold",
   {
     variants: {
       variant: {
@@ -21,28 +21,28 @@ const badgeVariants = cva(
          * Available — green
          * bg: #DCFCE7 / text: #16A34A
          */
-        available: "bg-status-green-light text-status-green before:text-status-green",
+        available: "bg-status-green-light text-status-green",
 
         /**
-         * Checked Out — amber
-         * bg: #FEF3C7 / text: #D97706
+         * Checked Out — brand blue (themed as "issued" throughout the app)
+         * bg: #EFF6FF / text: #1B4FD8
          */
-        "checked-out": "bg-status-amber-light text-status-amber before:text-status-amber",
+        "checked-out": "bg-brand-blue-light text-brand-blue",
 
         /**
          * Damaged — red
          * bg: #FEE2E2 / text: #DC2626
          */
-        damaged: "bg-status-red-light text-status-red before:text-status-red",
+        damaged: "bg-status-red-light text-status-red",
 
         /**
          * Repaired — teal
          * bg: #CCFBF1 / text: #0D9488
          */
-        repaired: "bg-status-teal-light text-status-teal before:text-status-teal",
+        repaired: "bg-status-teal-light text-status-teal",
 
         // ── Under Repair ─────────────────────────────────────────
-        "under-repair": "bg-status-orange-light text-status-orange before:text-status-orange",
+        "under-repair": "bg-status-orange-light text-status-orange",
 
         // ── Category chip (Equipment table) ─────────────────────────
         category: "bg-brand-blue-light text-brand-blue before:hidden",

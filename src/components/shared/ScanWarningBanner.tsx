@@ -31,6 +31,13 @@ export interface ScanWarning {
   kind:    ScanWarningKind;
   /** Human-readable message to display */
   message: string;
+  /** Optional secondary detail/description rendered below the message */
+  detail?: string;
+  /** Optional action button (e.g. link to damage report) */
+  action?: {
+    label: string;
+    href:  string;
+  };
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────
@@ -60,12 +67,25 @@ export function ScanWarningBanner({ warning, onDismiss }: ScanWarningBannerProps
   return (
     <div
       role="alert"
-      className={`flex items-center gap-3 px-4 py-2.5 rounded-card border text-[12px] font-medium ${variantStyles[warning.kind]}`}
+      className={`flex items-start gap-3 px-4 py-2.5 rounded-card border text-[12px] font-medium ${variantStyles[warning.kind]}`}
     >
-      <span className="text-[14px] shrink-0 leading-none" aria-hidden="true">
+      <span className="text-[14px] shrink-0 leading-none mt-0.5" aria-hidden="true">
         {warningIcons[warning.kind]}
       </span>
-      <span className="flex-1">{warning.message}</span>
+      <div className="flex-1 min-w-0">
+        <div>{warning.message}</div>
+        {warning.detail && (
+          <div className="text-[11px] font-normal opacity-80 mt-0.5">{warning.detail}</div>
+        )}
+        {warning.action && (
+          <a
+            href={warning.action.href}
+            className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold underline underline-offset-2 hover:opacity-80"
+          >
+            {warning.action.label}
+          </a>
+        )}
+      </div>
       <button
         type="button"
         onClick={onDismiss}

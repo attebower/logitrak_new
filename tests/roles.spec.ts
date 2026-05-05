@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('Operator role restrictions', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page: _page }) => {
     // TODO: sign in as operator user
   });
 
@@ -41,7 +41,7 @@ test.describe('Operator role restrictions', () => {
 });
 
 test.describe('Read-Only role restrictions', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page: _page }) => {
     // TODO: sign in as read-only user
   });
 
@@ -67,7 +67,7 @@ test.describe('Read-Only role restrictions', () => {
 });
 
 test.describe('Manager role permissions', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page: _page }) => {
     // TODO: sign in as manager user
   });
 

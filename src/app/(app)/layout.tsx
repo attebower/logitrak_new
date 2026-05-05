@@ -10,35 +10,64 @@
  */
 
 import { redirect } from "next/navigation";
+import { Toaster } from "sonner";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { AppSidebar } from "@/components/shared/AppSidebar";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { WorkspaceProvider } from "@/lib/workspace-context";
+import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 import type { NavSection } from "@/components/shared/AppSidebar";
+import {
+  LayoutDashboard, ArrowRight, RotateCcw, List, Plus,
+  FileText, AlertTriangle, Users, Settings, Clapperboard, Tag as TagIcon,
+  Handshake,
+} from "lucide-react";
+
+// Alias for clarity (Tag is also a sidebar section label)
+const Tag = TagIcon;
 
 const NAV_SECTIONS: NavSection[] = [
   {
     label: "Main",
     items: [
-      { label: "Dashboard",    href: "/dashboard",  icon: "⊞" },
-      { label: "Check In/Out", href: "/checkinout", icon: "⇄" },
-      { label: "Equipment",    href: "/equipment",  icon: "≡" },
+      { label: "Dashboard",  href: "/dashboard",   icon: <LayoutDashboard className="h-4 w-4" /> },
+      { label: "Projects",   href: "/projects",    icon: <Clapperboard className="h-4 w-4" /> },
+    ],
+  },
+  {
+    label: "Track Kit",
+    items: [
+      { label: "Issue",      href: "/issue",       icon: <ArrowRight className="h-4 w-4" /> },
+      { label: "Return",     href: "/return",      icon: <RotateCcw className="h-4 w-4" /> },
+      { label: "Cross Hire", href: "/cross-hire",  icon: <Handshake className="h-4 w-4" /> },
+    ],
+  },
+  {
+    label: "Equipment",
+    items: [
+      { label: "Equipment Register", href: "/equipment",     icon: <List className="h-4 w-4" /> },
+      { label: "Add Equipment",      href: "/equipment/new", icon: <Plus className="h-4 w-4" /> },
+    ],
+  },
+  {
+    label: "Labels",
+    items: [
+      { label: "Generate Labels", href: "/equipment/labels", icon: <Tag className="h-4 w-4" /> },
     ],
   },
   {
     label: "Monitor",
     items: [
-      { label: "Reports", href: "/reports", icon: "📋" },
-      { label: "Damage",  href: "/damage",  icon: "⚠" },
+      { label: "Reports", href: "/reports", icon: <FileText className="h-4 w-4" /> },
+      { label: "Damage",  href: "/damage",  icon: <AlertTriangle className="h-4 w-4" /> },
     ],
   },
   {
     label: "Manage",
     items: [
-      { label: "Locations", href: "/locations", icon: "🏢" },
-      { label: "Team",      href: "/team",      icon: "👥" },
-      { label: "Settings",  href: "/settings",  icon: "⚙" },
+      { label: "Team",      href: "/team",      icon: <Users className="h-4 w-4" /> },
+      { label: "Settings",  href: "/settings",  icon: <Settings className="h-4 w-4" /> },
     ],
   },
 ];
@@ -86,10 +115,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             user={displayUser}
             deptLabel={membership.workspace.name}
           />
-          <main className="flex-1 overflow-hidden flex flex-col bg-grey-light">
+          <main className="flex-1 overflow-hidden flex flex-col bg-grey-light pb-20 lg:pb-0">
             {children}
           </main>
+          <MobileBottomNav />
         </div>
+        <Toaster
+          position="bottom-right"
+          richColors
+          closeButton
+          toastOptions={{
+            classNames: {
+              toast: "rounded-card border border-grey-mid shadow-card text-[13px]",
+            },
+          }}
+        />
       </WorkspaceProvider>
     </TRPCProvider>
   );

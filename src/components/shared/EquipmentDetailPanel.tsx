@@ -1,35 +1,39 @@
 /**
- * LogiTrak EquipmentDetailPanel Component
- * Slide-in drawer showing full equipment info, check event history, and damage history.
+ * EquipmentDetailPanel — slide-in right drawer with equipment detail.
  *
- * Built as a right-side drawer (Sheet pattern from shadcn) — not a modal.
- * Nova: wire to the router or a drawer state; open when View is clicked in the equipment table.
- *
- * Usage:
- *   <EquipmentDetailPanel
- *     equipment={selectedItem}
- *     isOpen={!!selectedId}
- *     onClose={() => setSelectedId(null)}
- *   />
+ * Redesigned:
+ *  - Rectangular StatusPill (coloured right edge) instead of round badge chips
+ *  - Prettified enum values (no more `on_set`, `rigged_to_outside_of_set`)
+ *  - Rich info: days issued, previous locations, durations
+ *  - Card-based layout matching Reports / Equipment pages
  */
 
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { EquipmentStatus } from "./EquipmentListRow";
-import type { BadgeProps } from "@/components/ui/badge";
+import { StatusPill, type StatusPillValue } from "@/components/shared/StatusPill";
+import { formatDateTime, formatDate, durationFromNow, durationBetween, prettyPosition } from "@/lib/format";
 
 // ── Data shapes ───────────────────────────────────────────────────────────
+
+export interface LocationParts {
+  studio?:     string | null;
+  stage?:      string | null;
+  set?:        string | null;
+  onLocation?: string | null;
+  position?:   string | null;
+  exact?:      string | null;
+}
 
 export interface CheckEvent {
   id:          string;
   type:        "out" | "in";
   location?:   string;
+  locationParts?: LocationParts;
   checkedBy:   string;
-  timestamp:   string; // ISO string
-  itemCount?:  number; // if batch
+  timestamp:   string;
 }
 
 export interface DamageEvent {
@@ -38,9 +42,19 @@ export interface DamageEvent {
   reportedBy:    string;
   timestamp:     string;
   status:        "damaged" | "under-repair" | "repaired";
-  resolution?:   string;    // filled when repaired
+  resolution?:   string;
   repairedBy?:   string;
   repairedAt?:   string;
+}
+
+export interface CrossHireInfo {
+  eventId:        string;
+  productionName: string;
+  contactName?:   string | null;
+  contactEmail?:  string | null;
+  contactPhone?:  string | null;
+  startDate:      string;
+  endDate?:       string | null;
 }
 
 export interface EquipmentDetail {
@@ -48,31 +62,18 @@ export interface EquipmentDetail {
   serial:        string;
   type:          string;
   category:      string;
-  status:        EquipmentStatus;
-  location?:     string;
+  status:        StatusPillValue;
+  /** Structured current location (when issued). If absent, shown as "In stock". */
+  location?:     LocationParts | null;
+  /** Active cross-hire (when status is cross_hired). Replaces the location card. */
+  crossHire?:    CrossHireInfo | null;
   notes?:        string;
   addedAt:       string;
+  /** When the item was last checked out (only present if currently issued) */
+  issuedAt?:     string | null;
   checkHistory:  CheckEvent[];
   damageHistory: DamageEvent[];
 }
-
-// ── Status → badge variant ────────────────────────────────────────────────
-
-const statusVariant: Record<EquipmentStatus, BadgeProps["variant"]> = {
-  available:     "available",
-  "checked-out": "checked-out",
-  damaged:       "damaged",
-  repaired:      "repaired",
-  "under-repair": "under-repair",
-};
-
-const statusLabel: Record<EquipmentStatus, string> = {
-  available:     "Available",
-  "checked-out": "Checked Out",
-  damaged:       "Damaged",
-  repaired:      "Repaired",
-  "under-repair": "Under Repair",
-};
 
 // ── Panel ─────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,6 @@ export function EquipmentDetailPanel({
 }: EquipmentDetailPanelProps) {
   return (
     <>
-      {/* Overlay */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/30 z-40"
@@ -100,10 +100,9 @@ export function EquipmentDetailPanel({
         />
       )}
 
-      {/* Drawer */}
       <div
         className={cn(
-          "fixed top-0 right-0 h-full w-[480px] bg-white shadow-device z-50",
+          "fixed top-0 right-0 h-full w-[520px] max-w-[95vw] bg-grey-light shadow-device z-50",
           "flex flex-col transition-transform duration-300",
           isOpen ? "translate-x-0" : "translate-x-full"
         )}
@@ -114,58 +113,67 @@ export function EquipmentDetailPanel({
         {equipment ? (
           <>
             {/* ── Header ── */}
-            <div className="flex items-start justify-between px-6 py-5 border-b border-grey-mid">
-              <div>
-                <div className="text-serial text-surface-dark text-[18px] mb-1">
-                  {equipment.serial}
+            <div className="bg-white border-b border-grey-mid px-6 py-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[11px] font-semibold text-grey uppercase tracking-wide">Serial</span>
+                    <span className="text-[13px] font-semibold text-surface-dark">{equipment.serial}</span>
+                  </div>
+                  <h2 className="text-[18px] font-semibold text-surface-dark truncate">{equipment.type}</h2>
+                  <p className="text-[12px] text-grey mt-0.5">{equipment.category}</p>
                 </div>
-                <div className="text-body text-grey">{equipment.type}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Badge variant={statusVariant[equipment.status]}>
-                    {statusLabel[equipment.status]}
-                  </Badge>
-                  <Badge variant="category">{equipment.category}</Badge>
-                </div>
+                <button
+                  onClick={onClose}
+                  className="text-grey hover:text-surface-dark text-[20px] leading-none -mt-1"
+                  aria-label="Close panel"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                onClick={onClose}
-                className="text-grey hover:text-surface-dark text-xl leading-none mt-1"
-                aria-label="Close panel"
-              >
-                ×
-              </button>
+              <div className="mt-3">
+                <StatusPill status={equipment.status} />
+              </div>
             </div>
 
             {/* ── Body ── */}
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
-              {/* Info grid */}
-              <Section title="Details">
-                <InfoGrid>
-                  <InfoItem label="Location" value={equipment.location ?? "In Stock"} />
-                  <InfoItem label="Category" value={equipment.category} />
-                  <InfoItem label="Added" value={formatDate(equipment.addedAt)} />
-                  {equipment.notes && (
-                    <InfoItem label="Notes" value={equipment.notes} fullWidth />
-                  )}
-                </InfoGrid>
-              </Section>
+              {equipment.crossHire ? (
+                <CrossHireCard info={equipment.crossHire} />
+              ) : (
+                <LocationCard
+                  location={equipment.location ?? null}
+                  issuedFor={equipment.issuedAt ? durationFromNow(equipment.issuedAt) : null}
+                />
+              )}
 
-              {/* Check event history */}
-              <Section title="Check History">
+              <InfoCard>
+                <InfoRow label="Category" value={equipment.category} />
+                <InfoRow label="Added" value={formatDate(equipment.addedAt)} />
+                {equipment.notes && <InfoRow label="Notes" value={equipment.notes} wrap />}
+              </InfoCard>
+
+              <SectionCard title="Check History" count={equipment.checkHistory.length}>
                 {equipment.checkHistory.length === 0 ? (
                   <EmptyState>No check events yet</EmptyState>
                 ) : (
-                  <div className="space-y-0 divide-y divide-grey-mid">
-                    {equipment.checkHistory.map((ev) => (
-                      <CheckEventRow key={ev.id} event={ev} />
-                    ))}
+                  <div className="divide-y divide-grey-mid">
+                    {equipment.checkHistory.map((ev, idx) => {
+                      // Duration between this and the previous (next in array) event
+                      const nextEv = equipment.checkHistory[idx + 1];
+                      const duration = nextEv
+                        ? durationBetween(nextEv.timestamp, ev.timestamp)
+                        : null;
+                      return (
+                        <CheckEventRow key={ev.id} event={ev} durationSincePrev={duration ?? undefined} />
+                      );
+                    })}
                   </div>
                 )}
-              </Section>
+              </SectionCard>
 
-              {/* Damage history */}
-              <Section title="Damage History">
+              <SectionCard title="Damage History" count={equipment.damageHistory.length}>
                 {equipment.damageHistory.length === 0 ? (
                   <EmptyState>No damage reported</EmptyState>
                 ) : (
@@ -175,26 +183,39 @@ export function EquipmentDetailPanel({
                     ))}
                   </div>
                 )}
-              </Section>
+              </SectionCard>
             </div>
 
-            {/* ── Footer actions ── */}
-            <div className="px-6 py-4 border-t border-grey-mid flex gap-2">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => onReportDamage?.(equipment.id)}
-                className="flex-1"
-              >
-                Report Damage
-              </Button>
+            {/* ── Footer ── */}
+            <div className="bg-white px-6 py-4 border-t border-grey-mid flex gap-2">
+              {equipment.status === "damaged" || equipment.status === "under_repair" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => {
+                    window.location.href = `/damage?equipmentId=${equipment.id}`;
+                  }}
+                >
+                  Go to Damage Report
+                </Button>
+              ) : (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => onReportDamage?.(equipment.id)}
+                  className="flex-1"
+                >
+                  Report Damage
+                </Button>
+              )}
               <Button variant="secondary" size="sm" onClick={onClose} className="flex-1">
                 Close
               </Button>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-grey text-body">
+          <div className="flex-1 flex items-center justify-center text-grey text-[13px]">
             Loading…
           </div>
         )}
@@ -205,85 +226,188 @@ export function EquipmentDetailPanel({
 
 // ── Sub-components ────────────────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function InfoCard({ children }: { children: React.ReactNode }) {
   return (
-    <div>
-      <h3 className="text-caption text-grey uppercase mb-3">{title}</h3>
-      {children}
+    <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+      <dl className="divide-y divide-grey-mid">{children}</dl>
     </div>
   );
 }
 
-function InfoGrid({ children }: { children: React.ReactNode }) {
-  return <dl className="grid grid-cols-2 gap-x-4 gap-y-3">{children}</dl>;
+function InfoRow({ label, value, wrap }: { label: string; value: string; wrap?: boolean }) {
+  return (
+    <div className="px-4 py-2.5 flex items-start gap-4">
+      <dt className="text-[11px] font-semibold text-grey uppercase tracking-wide w-32 shrink-0 mt-0.5">{label}</dt>
+      <dd className={cn("text-[13px] text-surface-dark flex-1", wrap ? "whitespace-pre-wrap" : "truncate")}>{value}</dd>
+    </div>
+  );
 }
 
-function InfoItem({
-  label,
-  value,
-  fullWidth,
-}: {
-  label:     string;
-  value:     string;
-  fullWidth?: boolean;
-}) {
+function SectionCard({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
   return (
-    <div className={fullWidth ? "col-span-2" : ""}>
-      <dt className="text-caption text-grey uppercase mb-0.5">{label}</dt>
-      <dd className="text-body text-surface-dark">{value}</dd>
+    <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-grey-mid flex items-center justify-between">
+        <h3 className="text-[12px] font-semibold text-surface-dark">{title}</h3>
+        {typeof count === "number" && count > 0 && (
+          <span className="text-[11px] text-grey">{count}</span>
+        )}
+      </div>
+      {children}
     </div>
   );
 }
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="py-4 text-center text-[12px] text-grey border border-grey-mid rounded-card">
-      {children}
-    </div>
+    <div className="py-6 text-center text-[12px] text-grey">{children}</div>
   );
 }
 
-function CheckEventRow({ event }: { event: CheckEvent }) {
+function CheckEventRow({ event, durationSincePrev }: { event: CheckEvent; durationSincePrev?: string }) {
   const isOut = event.type === "out";
+  const parts = event.locationParts;
+  const venue = parts?.onLocation
+    ? parts.onLocation
+    : [parts?.studio, parts?.stage, parts?.set].filter(Boolean).join(" → ");
+  const position = parts?.position ? prettyPosition(parts.position) : null;
+
   return (
-    <div className="flex items-start gap-3 py-2.5">
+    <div className="flex items-start gap-3 px-4 py-3">
       <div
         className={cn(
-          "w-2 h-2 rounded-full mt-[5px] flex-shrink-0",
+          "w-2 h-2 rounded-full mt-[6px] flex-shrink-0",
           isOut ? "bg-status-amber" : "bg-status-green"
         )}
         aria-hidden
       />
       <div className="flex-1 min-w-0">
-        <p className="text-[12px] text-surface-dark">
-          {isOut ? "Checked out" : "Checked in"}
-          {event.location && (
-            <> to <strong>{event.location}</strong></>
-          )}
-        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[12px] font-semibold text-surface-dark">
+            {isOut ? "Issued" : "Returned"}
+          </span>
+          {venue && <span className="text-[12px] text-grey">to {venue}</span>}
+        </div>
+        {(position || parts?.exact) && (
+          <p className="text-[11px] text-grey mt-0.5">
+            {position && <span>{position}</span>}
+            {position && parts?.exact && <span> · </span>}
+            {parts?.exact && <span className="whitespace-pre-wrap">{parts.exact}</span>}
+          </p>
+        )}
         <p className="text-[11px] text-grey mt-0.5">
-          {event.checkedBy} · {formatDate(event.timestamp)}
+          {event.checkedBy} · {formatDateTime(event.timestamp)}
+          {durationSincePrev && <> · {isOut ? "held for" : "was out for"} {durationSincePrev}</>}
         </p>
       </div>
+    </div>
+  );
+}
+
+// ── Location card (dedicated, roomy, wraps long descriptions) ────────────
+
+function LocationCard({
+  location,
+  issuedFor,
+}: {
+  location: LocationParts | null;
+  issuedFor: string | null;
+}) {
+  const isInStock = !location || (
+    !location.studio && !location.stage && !location.set &&
+    !location.onLocation && !location.position && !location.exact
+  );
+
+  if (isInStock) {
+    return (
+      <InfoCard>
+        <InfoRow label="Location" value="In stock" />
+      </InfoCard>
+    );
+  }
+
+  const loc = location!;
+  const position = loc.position ? prettyPosition(loc.position) : null;
+
+  return (
+    <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+      <div className="px-4 py-1.5 border-b border-grey-mid flex items-center justify-between bg-grey-light/50">
+        <h3 className="text-[10px] font-semibold text-grey uppercase tracking-wider">Current Location</h3>
+        {issuedFor && <span className="text-[10px] text-grey">issued {issuedFor} ago</span>}
+      </div>
+      <dl className="divide-y divide-grey-mid">
+        {loc.onLocation ? (
+          <LocRow label="On Location" value={loc.onLocation} />
+        ) : (
+          <>
+            {loc.studio && <LocRow label="Studio" value={loc.studio} />}
+            {loc.stage  && <LocRow label="Stage"  value={loc.stage}  />}
+            {loc.set    && <LocRow label="Set"    value={loc.set}    />}
+          </>
+        )}
+        {position     && <LocRow label="Position" value={position}   />}
+        {loc.exact    && <LocRow label="Details"  value={loc.exact} wrap />}
+      </dl>
+    </div>
+  );
+}
+
+function CrossHireCard({ info }: { info: CrossHireInfo }) {
+  const now = Date.now();
+  const endMs    = info.endDate ? new Date(info.endDate).getTime() : null;
+  const isOverdue   = !!(endMs && endMs < now);
+  const daysOverdue = isOverdue && endMs ? Math.floor((now - endMs) / 86400000) : 0;
+
+  return (
+    <div className="bg-white rounded-card border border-grey-mid overflow-hidden">
+      <div className="px-4 py-1.5 border-b border-grey-mid flex items-center justify-between bg-violet-50">
+        <h3 className="text-[10px] font-semibold text-violet-700 uppercase tracking-wider">On Cross Hire</h3>
+        {isOverdue && (
+          <span className="text-[10px] font-bold uppercase tracking-wide bg-red-100 text-red-600 px-1.5 py-0.5 rounded">
+            {daysOverdue}d overdue
+          </span>
+        )}
+      </div>
+      <dl className="divide-y divide-grey-mid">
+        <LocRow label="Production" value={info.productionName} />
+        {info.contactName  && <LocRow label="Contact"  value={info.contactName} />}
+        {info.contactPhone && <LocRow label="Phone"    value={info.contactPhone} />}
+        {info.contactEmail && <LocRow label="Email"    value={info.contactEmail} />}
+        <LocRow label="Start" value={formatDate(info.startDate)} />
+        {info.endDate && <LocRow label="Due back" value={formatDate(info.endDate)} />}
+      </dl>
+      <div className="px-4 py-2 border-t border-grey-mid bg-grey-light/30">
+        <Link href={`/cross-hire/${info.eventId}`}>
+          <Button variant="primary" size="sm">
+            Open cross hire
+          </Button>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function LocRow({ label, value, wrap }: { label: string; value: string; wrap?: boolean }) {
+  return (
+    <div className="px-4 py-2.5 flex items-start gap-4">
+      <dt className="text-[11px] font-semibold text-grey uppercase tracking-wide w-32 shrink-0 mt-0.5">{label}</dt>
+      <dd className={cn("text-[13px] text-surface-dark flex-1 min-w-0", wrap ? "whitespace-pre-wrap break-words" : "")}>{value}</dd>
     </div>
   );
 }
 
 function DamageEventRow({ event }: { event: DamageEvent }) {
   return (
-    <div className="bg-grey-light rounded-card border border-grey-mid px-4 py-3 space-y-1">
+    <div className="px-4 py-3 space-y-1.5">
       <div className="flex items-center gap-2">
-        <Badge variant={event.status === "repaired" ? "repaired" : "damaged"}>
-          {event.status === "repaired" ? "Repaired" : "Damaged"}
-        </Badge>
-        <span className="text-[11px] text-grey">{formatDate(event.timestamp)}</span>
+        <StatusPill status={event.status === "repaired" ? "repaired" : event.status === "under-repair" ? "under_repair" : "damaged"} size="sm" />
+        <span className="text-[11px] text-grey">{formatDateTime(event.timestamp)}</span>
       </div>
       <p className="text-[12px] text-surface-dark">{event.description}</p>
       <p className="text-[11px] text-grey">Reported by {event.reportedBy}</p>
       {event.resolution && (
-        <div className="pt-1 border-t border-grey-mid mt-1">
-          <p className="text-[11px] text-status-teal font-semibold">
-            Repaired by {event.repairedBy} · {event.repairedAt && formatDate(event.repairedAt)}
+        <div className="pt-1.5 mt-1 border-t border-grey-mid">
+          <p className="text-[11px] font-semibold text-status-teal">
+            Repaired by {event.repairedBy}{event.repairedAt ? ` · ${formatDateTime(event.repairedAt)}` : ""}
           </p>
           <p className="text-[12px] text-surface-dark">{event.resolution}</p>
         </div>
@@ -292,16 +416,5 @@ function DamageEventRow({ event }: { event: DamageEvent }) {
   );
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString("en-GB", {
-      day:   "numeric",
-      month: "short",
-      year:  "numeric",
-      hour:  "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
+// Re-export for convenience
+export { prettyPosition };

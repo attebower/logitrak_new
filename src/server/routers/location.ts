@@ -252,12 +252,27 @@ const stageRouter = router({
 
 const setRouter = router({
   list: workspaceProcedure
-    .input(z.object({ workspaceId: z.string(), stageId: z.string() }))
+    .input(z.object({
+      workspaceId:  z.string(),
+      stageId:      z.string().optional(),
+      onLocationId: z.string().optional(),
+    }).refine((v) => !!v.stageId !== !!v.onLocationId, {
+      message: "Provide exactly one of stageId or onLocationId",
+    }))
     .query(async ({ ctx, input }) => {
+      if (input.stageId) {
+        return ctx.prisma.set.findMany({
+          where: {
+            stageId: input.stageId,
+            stage: { studio: { workspaceId: ctx.workspaceId! } },
+          },
+          orderBy: { name: "asc" },
+        });
+      }
       return ctx.prisma.set.findMany({
         where: {
-          stageId: input.stageId,
-          stage: { studio: { workspaceId: ctx.workspaceId! } },
+          onLocationId: input.onLocationId!,
+          onLocation: { workspaceId: ctx.workspaceId! },
         },
         orderBy: { name: "asc" },
       });
@@ -379,8 +394,21 @@ const setRouter = router({
     }),
 });
 
+const onLocationRouter = router({
+  list: workspaceProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .query(async ({ ctx }) => {
+      return ctx.prisma.onLocation.findMany({
+        where: { workspaceId: ctx.workspaceId! },
+        orderBy: [{ project: { name: "asc" } }, { name: "asc" }],
+        include: { project: { select: { id: true, name: true } } },
+      });
+    }),
+});
+
 export const locationRouter = router({
-  studio: studioRouter,
-  stage: stageRouter,
-  set: setRouter,
+  studio:     studioRouter,
+  stage:      stageRouter,
+  set:        setRouter,
+  onLocation: onLocationRouter,
 });

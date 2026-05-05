@@ -19,14 +19,14 @@ export async function createTRPCContext(
 ): Promise<Context> {
   const supabase = createClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
   return {
     supabase,
     prisma,
-    session: session
-      ? { user: { id: session.user.id, email: session.user.email } }
+    session: user
+      ? { user: { id: user.id, email: user.email } }
       : null,
     workspaceId: null,
     userRole: null,
@@ -60,7 +60,8 @@ const enforceWorkspaceMember = t.middleware(async (opts) => {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
-  const parsed = z.object({ workspaceId: z.string() }).safeParse((opts as { input: unknown }).input);
+  const rawInput = await opts.getRawInput();
+  const parsed = z.object({ workspaceId: z.string() }).safeParse(rawInput);
   if (!parsed.success) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "workspaceId is required" });
   }
