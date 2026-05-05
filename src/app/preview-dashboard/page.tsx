@@ -702,7 +702,6 @@ function CrewLeaderboardPanel() {
     >
       <div className="px-4 py-3 space-y-2">
         {CREW_LEADERBOARD.map((c, i) => {
-          const pct = Math.round((c.total / max) * 100);
           const rankColor =
             i === 0 ? "bg-amber-100 text-amber-700 border-amber-200" :
             i === 1 ? "bg-grey-light text-surface-dark border-grey-mid" :

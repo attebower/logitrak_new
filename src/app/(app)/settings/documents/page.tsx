@@ -12,7 +12,6 @@
  * invoices have additional fields (VAT rate, footer, etc).
  */
 
-import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import {
   SettingsPageShell, SettingsSection,
